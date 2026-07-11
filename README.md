@@ -105,17 +105,33 @@ read-aloud/
 ├── read-aloud-gui.py          # Desktop app
 ├── read-aloud-tester.py       # Daemon / playback tester
 ├── speak*.sh                  # CLI helpers
-├── browser-extension/         # Chrome MV3 extension
+├── browser-extension/         # Chrome MV3 Pro (native host / Linux)
+├── browser-extension-store/   # Chrome/Edge marketplace (Web Speech)
 ├── native-host/               # Native messaging + speak daemon
+├── store/                     # Privacy policy + pack output
+├── STORE.md                   # How to publish to Chrome & Edge stores
 ├── install-browser-integration.sh
 ├── enable-in-chrome.sh
 ├── ROADMAP.md                 # Planned updates
 └── requirements.txt
 ```
 
-## Chrome Web Store
+## Chrome / Edge marketplace (Web Speech)
 
-This build is **not Store-ready** as-is: it needs a local Linux native host. A public Store version would need Web Speech API or a cloud TTS backend. See [ROADMAP.md](ROADMAP.md).
+A **Store-ready** build lives in `browser-extension-store/`. It uses the browser’s built-in voices (no Linux daemon).
+
+```bash
+# Test: Load unpacked → browser-extension-store/
+./pack-store-extension.sh   # creates store/dist/*.zip for upload
+```
+
+See **[STORE.md](STORE.md)** for Chrome Web Store and Edge Add-ons submission steps.
+
+Privacy policy page: [`docs/privacy.html`](docs/privacy.html) (enable GitHub Pages on `/docs`).
+
+## Chrome Web Store (Linux Pro note)
+
+The **Pro** extension in `browser-extension/` needs a local native host and is **not** Store-ready. Use the marketplace build above for public users. See [ROADMAP.md](ROADMAP.md).
 
 ## Troubleshooting
 

@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Read Aloud Settings</title>
+  <style>
+    body {
+      font: 14px/1.45 "Segoe UI", system-ui, sans-serif;
+      color: #1c2430;
+      margin: 16px;
+      max-width: 420px;
+    }
+    h1 { font-size: 18px; margin: 0 0 8px; }
+    p { color: #5b6775; margin: 0 0 12px; }
+    label { display: block; font-weight: 600; margin: 10px 0 4px; }
+    select, input[type="range"] { width: 100%; }
+    select {
+      padding: 6px 8px;
+      border: 1px solid #d5dde6;
+      border-radius: 6px;
+    }
+    .row { margin-top: 14px; display: flex; gap: 8px; }
+    button {
+      flex: 1;
+      padding: 8px;
+      border: 0;
+      border-radius: 6px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    #save { background: #1f6feb; color: #fff; }
+    #reset { background: #e8eef5; }
+    #status { margin-top: 10px; color: #5b6775; font-size: 12px; min-height: 1.2em; }
+  </style>
+</head>
+<body>
+  <h1>Read Aloud Settings</h1>
+  <p>These apply to right-click reading on web pages. Voices come from your browser/OS.</p>
+
+  <label for="voice">Voice</label>
+  <select id="voice"></select>
+
+  <label for="rate">Speed <span id="rateVal">1x</span></label>
+  <input id="rate" type="range" min="0" max="6" step="1" />
+
+  <label for="pitch">Pitch <span id="pitchVal">1x</span></label>
+  <input id="pitch" type="range" min="0" max="4" step="1" />
+
+  <label for="volume">Volume <span id="volumeVal">1x</span></label>
+  <input id="volume" type="range" min="0" max="3" step="1" />
+
+  <div class="row">
+    <button id="save" type="button">Save</button>
+    <button id="reset" type="button">Reset</button>
+  </div>
+  <p id="status"></p>
+  <script src="options.js"></script>
+</body>
+</html>

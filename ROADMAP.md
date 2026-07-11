@@ -10,23 +10,18 @@ Ideas and next steps for Read Aloud. Order may change.
 - [ ] **Sync settings** — share voice/speed between desktop GUI and Chrome extension
 - [ ] **Better status** — show “Playing…” / progress in the GUI footer while the daemon speaks
 
-## Chrome Web Store (optional track)
+## Chrome Web Store / Edge Add-ons
 
-Current extension depends on a **local native host** (Linux only). Store users won’t have that.
+- [x] Marketplace build (`browser-extension-store/`) using Web Speech API
+- [x] Pack script + privacy policy + STORE.md submission guide
+- [ ] Developer accounts ($5 Chrome; Microsoft Partner Center for Edge)
+- [ ] Screenshots (1280×800)
+- [ ] Enable GitHub Pages for privacy URL
+- [ ] Submit Chrome Web Store listing
+- [ ] Submit Edge Add-ons listing
+- [ ] Optional later: cloud TTS “premium” voices in Store build
 
-Possible paths:
-
-1. **Lite Store build** — Web Speech API only (weaker voices, no install)
-2. **Cloud TTS build** — Microsoft/Google/Amazon API (good voices; needs keys + privacy policy)
-3. **Keep GitHub “Pro”** — current edge-tts + daemon for Linux power users
-
-Checklist if publishing:
-
-- [ ] Developer account ($5)
-- [ ] Remove `nativeMessaging` from Store zip (or ship a separate lite package)
-- [ ] Privacy policy URL
-- [ ] Screenshots + store listing copy
-- [ ] Trim host permissions where possible
+Current extension depends on a **local native host** (Linux only) for the Pro build. Store users get the Web Speech build instead.
 
 ## Quality / performance
 
