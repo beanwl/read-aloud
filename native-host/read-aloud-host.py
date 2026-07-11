@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Chrome native messaging host — forwards speak/stop to the warm speak daemon."""
+"""Chrome/Brave native messaging host — forwards speak/stop to the warm speak daemon.
+
+Chrome talks to this process over stdin/stdout using the native messaging
+length-prefixed JSON protocol. We reply quickly, then the daemon does the
+actual TTS so Chrome does not time out waiting for audio to finish.
+"""
 
 from __future__ import annotations
 
@@ -20,6 +25,7 @@ PYTHON = APP_DIR / "venv" / "bin" / "python"
 
 
 def read_message() -> dict | None:
+    """Read one native-messaging frame from Chrome (4-byte LE length + JSON)."""
     raw_len = sys.stdin.buffer.read(4)
     if not raw_len:
         return None
@@ -31,6 +37,7 @@ def read_message() -> dict | None:
 
 
 def send_message(payload: dict) -> None:
+    """Write one native-messaging frame back to Chrome."""
     encoded = json.dumps(payload).encode("utf-8")
     sys.stdout.buffer.write(struct.pack("<I", len(encoded)))
     sys.stdout.buffer.write(encoded)
@@ -38,6 +45,7 @@ def send_message(payload: dict) -> None:
 
 
 def ensure_daemon() -> None:
+    """Start speak-daemon if needed (first right-click after reboot)."""
     if _ping():
         return
     CACHE.mkdir(parents=True, exist_ok=True)

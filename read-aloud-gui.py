@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Read Aloud — Speakonia-style GUI with voice/pitch/speed/volume controls."""
+"""Read Aloud — Speakonia-style GUI with voice/pitch/speed/volume controls.
+
+Talks to the warm speak-daemon over a Unix socket for fast streaming TTS.
+Settings persist in ~/.config/read-aloud/settings.json.
+Only one GUI instance may run (fcntl lock) so two windows cannot overtalk.
+"""
 
 from __future__ import annotations
 
@@ -26,26 +31,31 @@ LOCK_PATH = Path.home() / ".cache/read-aloud.lock"
 SETTINGS_PATH = Path.home() / ".config/read-aloud/settings.json"
 
 # Discrete multiplier steps shown on sliders (1x = normal).
+# edge-tts expects rate/volume as ±N% and pitch as ±NHz — we convert below.
 MULTIPLIERS = [0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0, 4.0]
 DEFAULT_MULT_INDEX = MULTIPLIERS.index(1.0)
 
 
 def _format_multiplier(value: float) -> str:
+    """Human label for UI, e.g. 2x or 1.5x."""
     if value == int(value):
         return f"{int(value)}x"
     return f"{value:g}x"
 
 
 def _percent_from_multiplier(value: float) -> str:
+    """Convert 1x→+0%, 2x→+100% for edge-tts --rate / --volume."""
     return f"{int(round((value - 1) * 100)):+d}%"
 
 
 def _pitch_from_multiplier(value: float) -> str:
+    """Map multiplier to Hz using log2 so 2x ≈ +20Hz (one octave-ish step)."""
     hz = int(round(20 * math.log2(value)))
     return f"{hz:+d}Hz"
 
 
 def _daemon_send(msg: dict, timeout: float = 2.0) -> dict:
+    """Send one JSON line to speak-daemon and read one JSON line back."""
     payload = (json.dumps(msg) + "\n").encode("utf-8")
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
         sock.settimeout(timeout)
@@ -70,6 +80,7 @@ def _daemon_ping() -> bool:
 
 
 def ensure_speak_daemon() -> None:
+    """Start speak-daemon if the socket is not answering."""
     if _daemon_ping():
         return
     CACHE.mkdir(parents=True, exist_ok=True)
@@ -91,7 +102,7 @@ def ensure_speak_daemon() -> None:
 
 
 class SingleInstanceLock:
-    """Only allow one Read Aloud window at a time."""
+    """Exclusive flock so a second GUI launch exits instead of overlapping audio."""
 
     def __init__(self) -> None:
         self._fd = None
@@ -389,6 +400,7 @@ class ReadAloudApp:
         self.root.destroy()
 
     def _poll_clipboard(self) -> None:
+        """While the GUI is open, auto-read newly copied text (Ctrl+C)."""
         clip = self._read_clipboard()
         if clip and clip != self._last_clipboard:
             self._last_clipboard = clip
@@ -449,6 +461,7 @@ class ReadAloudApp:
         self.root.update_idletasks()
 
     def speak(self) -> None:
+        """Queue text to the warm daemon (streams; does not wait for full MP3)."""
         content = self.text.get("1.0", tk.END).strip()
         if not content:
             messagebox.showinfo("Read Aloud", "No text. Copy something first (Ctrl+C).")
@@ -468,6 +481,7 @@ class ReadAloudApp:
         ).start()
 
     def _speak_worker(self, content: str, generation: int) -> None:
+        """Background thread: ensure daemon, send speak, wait until idle or cancelled."""
         try:
             ensure_speak_daemon()
             if generation != self._speak_generation:

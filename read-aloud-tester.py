@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Simple Read Aloud tester — verify daemon, voices, and playback."""
+"""Read Aloud Tester — GUI to verify the speak daemon and local playback.
+
+Use this when the Chrome panel is stuck on "Reading…" or audio is silent.
+Check Daemon → Speak Test should produce Andrew's voice within ~1–2 seconds.
+"""
 
 from __future__ import annotations
 

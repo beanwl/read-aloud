@@ -1,3 +1,7 @@
+/**
+ * Toolbar popup — quick voice/speed/volume controls.
+ * Values are stored in chrome.storage.sync (shared with the page side panel).
+ */
 const MULTIPLIERS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4];
 const DEFAULT_INDEX = MULTIPLIERS.indexOf(1);
 

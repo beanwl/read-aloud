@@ -1,5 +1,13 @@
 #!/usr/bin/env python3
-"""Persistent Read Aloud speak daemon — keeps edge-tts warm and streams audio ASAP."""
+"""Persistent Read Aloud speak daemon — keeps edge-tts warm and streams audio ASAP.
+
+Listens on ~/.cache/read-aloud/speak.sock (one JSON line per request).
+Actions: ping | status | stop | speak (default).
+
+Audio path: edge_tts stream → ffmpeg (mp3→wav pipe) → paplay.
+`generation` counters cancel in-flight jobs when a new speak/stop arrives
+so voices never stack.
+"""
 
 from __future__ import annotations
 
@@ -24,6 +32,7 @@ MAX_CHARS = 50000
 
 
 def log(msg: str) -> None:
+    """Append debug lines for troubleshooting stuck playback."""
     line = msg.rstrip() + "\n"
     try:
         with LOG_FILE.open("a", encoding="utf-8") as fh:
@@ -33,12 +42,15 @@ def log(msg: str) -> None:
 
 
 class SpeakDaemon:
+    """Single-owner speech engine: one active job at a time."""
+
     def __init__(self) -> None:
-        self.generation = 0
+        self.generation = 0  # bumped on stop/new speak to invalidate old jobs
         self.current_task: asyncio.Task | None = None
         self._procs: list[subprocess.Popen] = []
 
     async def stop(self) -> None:
+        """Cancel the current job and kill ffmpeg/paplay children."""
         self.generation += 1
         if self.current_task and not self.current_task.done():
             self.current_task.cancel()
@@ -81,6 +93,7 @@ class SpeakDaemon:
         pitch: str,
         generation: int,
     ) -> None:
+        """Stream one TTS request: edge_tts → ffmpeg → paplay (blocking)."""
         if generation != self.generation:
             return
 

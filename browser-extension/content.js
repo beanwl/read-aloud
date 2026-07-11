@@ -1,5 +1,12 @@
+/**
+ * Read Aloud — content script injected on http(s) pages.
+ *
+ * Keeps a hidden side panel in the DOM. The panel only becomes visible after
+ * a right-click "Read Aloud" (or Speak from the panel). Settings sync with
+ * chrome.storage so the toolbar popup and this panel stay aligned.
+ */
 (() => {
-  if (window.__readAloudLoaded) return;
+  if (window.__readAloudLoaded) return; // avoid double-inject on SPA navigations
   window.__readAloudLoaded = true;
 
   const MULTIPLIERS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4];
@@ -23,6 +30,7 @@
     volumeIndex: DEFAULT_INDEX,
   };
 
+  // Hidden by default — only shown when reading starts.
   const root = document.createElement("div");
   root.id = "read-aloud-root";
   root.className = "ra-hidden";

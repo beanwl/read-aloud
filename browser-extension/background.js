@@ -1,3 +1,11 @@
+/**
+ * Read Aloud — background service worker (Manifest V3).
+ *
+ * - Creates the right-click "Read Aloud" context menu
+ * - Loads voice/speed settings from chrome.storage.sync
+ * - Sends text to the native host (com.readaloud.speak → speak-daemon)
+ * - Tells the page content script to show/hide the side panel
+ */
 const HOST = "com.readaloud.speak";
 const MENU_ID = "read-aloud-selection";
 const MULTIPLIERS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4];

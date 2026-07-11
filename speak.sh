@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Speak text using Microsoft neural voices (same quality as Edge / good PDF-to-MP3 tools).
+# speak.sh — speak text (args) or clipboard/primary selection via edge-tts.
+# Prefer the GUI/daemon for long articles; this is a simple one-shot CLI.
 set -euo pipefail
 
 DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
@@ -13,6 +14,7 @@ trap cleanup EXIT
 
 text="${*:-}"
 
+# Fall back to clipboard, then X11 primary (mouse highlight).
 if [[ -z "$text" ]]; then
   if command -v xclip >/dev/null 2>&1; then
     text="$(xclip -selection clipboard -o 2>/dev/null || true)"
