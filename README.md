@@ -1,10 +1,28 @@
-# Read Aloud
+# Speak Selection
 
-Speakonia-style text-to-speech for Linux: a desktop app, Chrome/Brave right-click extension, and CLI helpers. Uses Microsoft neural voices via [edge-tts](https://github.com/rany2/edge-tts) (default: **Andrew**, US male).
+**Speak Selection** is the Chrome Web Store / Edge marketplace extension: highlight text → right-click → hear it read aloud with adjustable voice, speed, pitch, and volume (Web Speech API).
 
-**Repo:** https://github.com/beanwl/read-aloud
+This repo also includes **Read Aloud**, a Linux Pro desktop stack (Tk GUI, native Chrome extension, speak daemon, CLI) that uses Microsoft neural voices via [edge-tts](https://github.com/rany2/edge-tts) (default: **Andrew**, US male).
+
+| Product | Where | Name |
+|---------|--------|------|
+| Marketplace extension | `browser-extension-store/` · [Chrome Web Store](https://chromewebstore.google.com/detail/speak-selection/eldhkkcbhbifaaleikchnmacpbaglgbe) | **Speak Selection** |
+| Linux Pro app + native extension | `read-aloud-gui.py`, `browser-extension/`, `native-host/` | **Read Aloud** |
+
+**Repo:** https://github.com/beanwl/read-aloud  
+**Privacy policy (Store):** https://beanwl.github.io/read-aloud/privacy.html
 
 ## Features
+
+### Speak Selection (Chrome / Edge store)
+
+- Right-click selected text → **Speak Selection**
+- Side panel for voice, speed, pitch, volume
+- Built-in browser voices (no native host; works on any OS)
+
+See **[STORE.md](STORE.md)** to pack and publish.
+
+### Read Aloud (Linux Pro)
 
 - **Desktop GUI** — paste clipboard, voice / speed / pitch / volume (0.25x–4x), Save Settings
 - **Chrome extension** — highlight text → right-click → **Read Aloud**; side panel for controls
@@ -12,16 +30,16 @@ Speakonia-style text-to-speech for Linux: a desktop app, Chrome/Brave right-clic
 - **CLI** — speak clipboard, selection, or PDF pages
 - **Single-instance GUI** — avoids two windows talking over each other
 
-## Requirements
+## Requirements (Linux Pro)
 
 - Linux (tested on Linux Mint / Ubuntu)
 - Python 3.10+
 - `paplay` (PulseAudio) or `mpv`
 - `ffmpeg` (for streaming playback; often in `~/.local/bin` or apt)
 - `xclip` (clipboard)
-- Google Chrome or Brave (for the extension)
+- Google Chrome or Brave (for the Pro extension)
 
-## Quick install
+## Quick install (Linux Pro)
 
 ```bash
 git clone https://github.com/beanwl/read-aloud.git
@@ -44,7 +62,7 @@ Or search the app menu for **Read Aloud** (if the `.desktop` file is installed).
 
 Settings are saved to `~/.config/read-aloud/settings.json`.
 
-### Chrome / Brave extension
+### Chrome / Brave Pro extension
 
 ```bash
 ./install-browser-integration.sh
@@ -85,7 +103,7 @@ export SPEAK_VOICE=en-US-JennyNeural   # voice id
 export SPEAK_PLAYER=paplay             # audio player
 ```
 
-## How it fits together
+## How it fits together (Linux Pro)
 
 ```
 Chrome extension ──nativeMessaging──► read-aloud-host.py
@@ -101,24 +119,23 @@ CLI speak.sh ──────────────────────�
 ## Project layout
 
 ```
-read-aloud/
-├── read-aloud-gui.py          # Desktop app
-├── read-aloud-tester.py       # Daemon / playback tester
-├── speak*.sh                  # CLI helpers
-├── browser-extension/         # Chrome MV3 Pro (native host / Linux)
-├── browser-extension-store/   # Chrome/Edge marketplace (Web Speech)
-├── native-host/               # Native messaging + speak daemon
-├── store/                     # Privacy policy + pack output
-├── STORE.md                   # How to publish to Chrome & Edge stores
+read-aloud/                        # GitHub repo slug (unchanged; keeps Pages privacy URL stable)
+├── read-aloud-gui.py              # Linux Pro desktop app
+├── read-aloud-tester.py           # Daemon / playback tester
+├── speak*.sh                      # CLI helpers
+├── browser-extension/             # Chrome MV3 Pro (native host / Linux) — Read Aloud
+├── browser-extension-store/       # Chrome/Edge marketplace — Speak Selection
+├── native-host/                   # Native messaging + speak daemon
+├── store/                         # Listing assets + pack output
+├── docs/                          # GitHub Pages (privacy.html)
+├── STORE.md                       # How to publish Speak Selection
 ├── install-browser-integration.sh
 ├── enable-in-chrome.sh
-├── ROADMAP.md                 # Planned updates
+├── ROADMAP.md
 └── requirements.txt
 ```
 
-## Chrome / Edge marketplace (Web Speech)
-
-A **Store-ready** build lives in `browser-extension-store/`. It uses the browser’s built-in voices (no Linux daemon).
+## Chrome / Edge marketplace (Speak Selection)
 
 ```bash
 # Test: Load unpacked → browser-extension-store/
@@ -127,13 +144,11 @@ A **Store-ready** build lives in `browser-extension-store/`. It uses the browser
 
 See **[STORE.md](STORE.md)** for Chrome Web Store and Edge Add-ons submission steps.
 
-Privacy policy page: [`docs/privacy.html`](docs/privacy.html) (enable GitHub Pages on `/docs`).
+Privacy policy: https://beanwl.github.io/read-aloud/privacy.html ([`docs/privacy.html`](docs/privacy.html)).
 
-## Chrome Web Store (Linux Pro note)
+The **Pro** extension in `browser-extension/` needs a local native host and is **not** Store-ready.
 
-The **Pro** extension in `browser-extension/` needs a local native host and is **not** Store-ready. Use the marketplace build above for public users. See [ROADMAP.md](ROADMAP.md).
-
-## Troubleshooting
+## Troubleshooting (Linux Pro)
 
 | Problem | Fix |
 |---------|-----|
@@ -145,4 +160,4 @@ The **Pro** extension in `browser-extension/` needs a local native host and is *
 
 ## License
 
-Use freely for personal projects. Voices are provided by Microsoft’s online TTS service via edge-tts — respect their terms of use.
+Use freely for personal projects. Marketplace voices are the browser’s built-in Web Speech voices. Linux Pro voices are provided by Microsoft’s online TTS via edge-tts — respect their terms of use.

@@ -49,7 +49,7 @@ Upload: `screenshot-1280x800.png`
 | Field | Value |
 |--------|--------|
 | Official URL | None (unless you verify a site in Search Console) |
-| Homepage URL | `https://github.com/beanwl/read-aloud` |
+| Homepage URL | `https://github.com/beanwl/read-aloud` (repo slug kept as `read-aloud` so privacy Pages URL stays stable) |
 | Support URL | `https://github.com/beanwl/read-aloud/issues` |
 | Mature content | **Off** |
 

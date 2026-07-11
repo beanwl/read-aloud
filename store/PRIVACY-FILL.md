@@ -58,4 +58,6 @@ Check **all three**:
 https://beanwl.github.io/read-aloud/privacy.html
 ```
 
+Keep this exact URL while the listing is **Pending review**. Do not rename the GitHub repo to `speak-selection` until after approval (or until you are ready to cancel review, update the privacy URL to the new Pages path, and resubmit).
+
 Then **Save draft** and return to Store listing → Submit for review.

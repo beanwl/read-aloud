@@ -1,6 +1,6 @@
 # Roadmap — planned updates
 
-Ideas and next steps for Read Aloud. Order may change.
+Ideas and next steps for **Speak Selection** (Chrome Web Store) and **Read Aloud** (Linux Pro). Order may change.
 
 ## Near term
 

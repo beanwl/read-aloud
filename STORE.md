@@ -27,13 +27,13 @@ Output: `store/dist/read-aloud-store-v1.0.1.zip` (version comes from `manifest.j
 
 ## Privacy policy URL (required)
 
-Host `store/privacy.html` somewhere public. Easiest with GitHub Pages:
+Host `docs/privacy.html` via GitHub Pages:
 
 1. Repo Settings → Pages → Deploy from branch `main` / folder `/docs`
-2. Use a URL like:  
+2. Live URL (do **not** change while a listing is Pending review):  
    `https://beanwl.github.io/read-aloud/privacy.html`
 
-Until Pages is enabled, you can temporarily use the raw GitHub URL only if the store accepts it (Chrome usually wants a normal https page). Prefer GitHub Pages.
+The GitHub repo slug stays **`read-aloud`** on purpose so this Pages URL remains valid during Chrome Web Store review. Renaming the repo to `speak-selection` would move Pages to `/speak-selection/` and break the submitted privacy URL unless you update the listing (and possibly cancel/resubmit review).
 
 ## Chrome Web Store
 
