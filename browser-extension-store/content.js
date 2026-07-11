@@ -1,5 +1,5 @@
 /**
- * Read Aloud (Store) — content script.
+ * Speak Selection (Store) — content script.
  *
  * Speaks selected text with speechSynthesis (built into Chrome/Edge).
  * Side panel appears only when reading starts.
@@ -27,7 +27,7 @@
   root.innerHTML = `
     <div class="ra-panel">
       <div class="ra-head">
-        <div class="ra-title">Read Aloud</div>
+        <div class="ra-title">Speak Selection</div>
         <button class="ra-close" type="button" title="Close">×</button>
       </div>
       <label for="ra-voice">Voice</label>

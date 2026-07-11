@@ -1,6 +1,6 @@
 # Chrome Web Store — Privacy tab (copy/paste)
 
-Item: Read Aloud (`eldhkkcbhbifaaleikchnmacpbaglgbe`)
+Item: Speak Selection (`eldhkkcbhbifaaleikchnmacpbaglgbe`)
 
 ## Single purpose description
 
@@ -12,7 +12,7 @@ Read selected webpage text aloud using the browser’s built-in speech engine, w
 
 ### contextMenus
 ```
-Adds a “Read Aloud” item to the right-click menu so users can start reading the text they selected.
+Adds a “Speak Selection” item to the right-click menu so users can start reading the text they selected.
 ```
 
 ### storage
@@ -22,7 +22,7 @@ Saves the user’s voice, speed, pitch, and volume preferences locally (and via 
 
 ### activeTab
 ```
-Allows the extension to interact with the tab the user is using when they choose Read Aloud, so selected text on that page can be spoken.
+Allows the extension to interact with the tab the user is using when they choose Speak Selection, so selected text on that page can be spoken.
 ```
 
 ### Host permission
@@ -54,11 +54,6 @@ Check **all three**:
 
 ## Privacy policy URL
 
-```
-https://beanwl.github.io/read-aloud/privacy.html
-```
-
-Fallback if Pages is still deploying:
 ```
 https://beanwl.github.io/read-aloud/privacy.html
 ```

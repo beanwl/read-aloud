@@ -1,17 +1,17 @@
-# Publish Read Aloud to Chrome Web Store & Edge Add-ons
+# Publish Speak Selection to Chrome Web Store & Edge Add-ons
 
-This is the **marketplace** build: `browser-extension-store/`.
+This is the **marketplace** build: `browser-extension-store/` (store name: **Speak Selection**).
 
 It uses the **Web Speech API** (built into Chrome and Edge). No Linux daemon, no `nativeMessaging`. Voices depend on the user’s OS/browser (quality varies; not the same as Andrew via edge-tts).
 
-The Linux **Pro** extension remains in `browser-extension/` for local install.
+The Linux **Pro** extension remains in `browser-extension/` for local install and keeps the **Read Aloud** name.
 
 ## Test locally first
 
 ### Chrome
 1. `chrome://extensions` → Developer mode → **Load unpacked**
 2. Select `browser-extension-store/`
-3. Open any article → highlight text → right-click → **Read Aloud**
+3. Open any article → highlight text → right-click → **Speak Selection**
 
 ### Edge
 1. `edge://extensions` → Developer mode → **Load unpacked**
@@ -23,14 +23,13 @@ The Linux **Pro** extension remains in `browser-extension/` for local install.
 ./pack-store-extension.sh
 ```
 
-Output: `store/dist/read-aloud-store-v1.0.0.zip`
+Output: `store/dist/read-aloud-store-v1.0.1.zip` (version comes from `manifest.json`)
 
 ## Privacy policy URL (required)
 
 Host `store/privacy.html` somewhere public. Easiest with GitHub Pages:
 
-1. Repo Settings → Pages → Deploy from branch `main` / folder `/store`  
-   **or** copy `privacy.html` to `docs/privacy.html` and enable Pages on `/docs`
+1. Repo Settings → Pages → Deploy from branch `main` / folder `/docs`
 2. Use a URL like:  
    `https://beanwl.github.io/read-aloud/privacy.html`
 
@@ -42,7 +41,7 @@ Until Pages is enabled, you can temporarily use the raw GitHub URL only if the s
    https://chrome.google.com/webstore/devconsole
 2. **New item** → upload `store/dist/read-aloud-store-v*.zip`
 3. Fill listing:
-   - **Name:** Read Aloud
+   - **Name:** Speak Selection
    - **Summary:** Right-click to hear selected text with adjustable speed and voice
    - **Category:** Productivity / Accessibility
    - **Language:** English
@@ -53,6 +52,18 @@ Until Pages is enabled, you can temporarily use the raw GitHub URL only if the s
    - Privacy policy URL (from above)
    - Justify permissions (contextMenus, storage, host access for selected text only)
 5. Submit for review (often a few days)
+
+### Renaming an item already in review
+
+If you submitted under the wrong name (e.g. “Read Aloud”):
+
+1. Open the item → **Store listing**
+2. **⋮** menu → **Cancel review** (returns to Draft)
+3. **Package** tab → upload the new zip (bump version in manifest first)
+4. Update **Store listing** title and description to **Speak Selection**
+5. **Save draft** → **Submit for review**
+
+See also `store/LISTING-FILL.md` and `store/PRIVACY-FILL.md` for copy-paste text.
 
 ## Microsoft Edge Add-ons
 
@@ -72,11 +83,11 @@ Right-click any selected text to hear it read aloud. Choose voice, speed, pitch,
 **Detailed description:**
 
 ```
-Read Aloud speaks the text you highlight on a webpage.
+Speak Selection reads the text you highlight on a webpage.
 
 How to use
 1. Select text on any page
-2. Right-click → Read Aloud
+2. Right-click → Speak Selection
 3. Adjust voice, speed, pitch, or volume in the side panel
 4. Click Stop anytime
 
@@ -91,6 +102,9 @@ Privacy: selected text stays on your device. We do not run servers that collect 
 - Share store links in the main README  
 - Bump `version` in `browser-extension-store/manifest.json` for each update  
 - Re-run `./pack-store-extension.sh` and upload a new zip  
+
+**Store URL (same extension ID after rename):**  
+https://chromewebstore.google.com/detail/speak-selection/eldhkkcbhbifaaleikchnmacpbaglgbe
 
 ## Note on voice quality
 

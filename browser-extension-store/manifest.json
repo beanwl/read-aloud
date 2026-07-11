@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Read Aloud",
-  "version": "1.0.0",
-  "description": "Right-click selected text to read it aloud. Adjust voice, speed, pitch, and volume from a small side panel.",
+  "name": "Speak Selection",
+  "version": "1.0.1",
+  "description": "Right-click selected text to hear it spoken aloud. Adjust voice, speed, pitch, and volume from a side panel.",
   "permissions": ["contextMenus", "storage", "activeTab"],
   "host_permissions": ["http://*/*", "https://*/*"],
   "background": {
@@ -17,7 +17,7 @@
     }
   ],
   "action": {
-    "default_title": "Read Aloud settings",
+    "default_title": "Speak Selection settings",
     "default_popup": "popup.html",
     "default_icon": {
       "16": "icons/icon16.png",

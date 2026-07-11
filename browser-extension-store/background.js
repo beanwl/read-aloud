@@ -1,5 +1,5 @@
 /**
- * Read Aloud (Store) — background service worker.
+ * Speak Selection (Store) — background service worker.
  *
  * Marketplace build: uses the page's Web Speech API via the content script.
  * No nativeMessaging / local daemon — works on Chrome and Edge for everyone.
@@ -10,7 +10,7 @@ chrome.runtime.onInstalled.addListener(() => {
   chrome.contextMenus.removeAll(() => {
     chrome.contextMenus.create({
       id: MENU_ID,
-      title: "Read Aloud",
+      title: "Speak Selection",
       contexts: ["selection"],
     });
   });
@@ -29,7 +29,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     });
   } catch (err) {
     // Page may block content scripts (chrome://, Web Store, PDF viewer, etc.).
-    console.warn("Read Aloud: page not reachable", err);
+    console.warn("Speak Selection: page not reachable", err);
   }
 });
 
