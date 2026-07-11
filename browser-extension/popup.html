@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Read Aloud</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <h1>Read Aloud</h1>
+  <p class="hint">Right-click selected text → Read Aloud</p>
+
+  <label for="voice">Voice</label>
+  <select id="voice"></select>
+
+  <label for="speed">Speed <span id="speedVal">1x</span></label>
+  <input id="speed" type="range" min="0" max="8" step="1" />
+
+  <label for="pitch">Pitch <span id="pitchVal">1x</span></label>
+  <input id="pitch" type="range" min="0" max="8" step="1" />
+
+  <label for="volume">Volume <span id="volumeVal">1x</span></label>
+  <input id="volume" type="range" min="0" max="8" step="1" />
+
+  <div class="row">
+    <button id="test" type="button">Test</button>
+    <button id="reset" type="button" class="secondary">Reset</button>
+  </div>
+
+  <p id="status" class="status"></p>
+  <script src="popup.js"></script>
+</body>
+</html>
