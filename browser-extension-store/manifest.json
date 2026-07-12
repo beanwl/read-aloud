@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Speak Selection",
-  "version": "1.0.1",
-  "description": "Right-click selected text to hear it spoken aloud. Adjust voice, speed, pitch, and volume from a side panel.",
+  "version": "1.0.2",
+  "description": "Right-click selected text to hear it spoken aloud. Stop, resume, and adjust voice, speed, pitch, and volume from a side panel.",
   "permissions": ["contextMenus", "storage", "activeTab"],
   "host_permissions": ["http://*/*", "https://*/*"],
   "background": {

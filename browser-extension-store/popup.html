@@ -8,8 +8,16 @@
 <body>
   <h1>Speak Selection</h1>
   <p class="hint">Highlight text → right-click → <b>Speak Selection</b></p>
-  <p class="hint">Uses your browser’s built-in voices (Chrome / Edge).</p>
-  <button id="open-options" type="button">Open settings</button>
+
+  <div class="row primary">
+    <button id="stop" type="button" class="stop">Stop</button>
+    <button id="resume" type="button" class="resume">Resume</button>
+  </div>
+  <div class="row compact">
+    <button id="test" type="button" class="tiny">Test</button>
+    <button id="open-options" type="button" class="tiny secondary">Settings</button>
+  </div>
+  <p id="status" class="status"></p>
   <script src="popup.js"></script>
 </body>
 </html>

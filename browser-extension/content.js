@@ -49,6 +49,7 @@
       <div class="ra-actions">
         <button class="ra-btn ra-speak" type="button">Speak</button>
         <button class="ra-btn ra-stop" type="button">Stop</button>
+        <button class="ra-btn ra-resume" type="button">Resume</button>
       </div>
       <p class="ra-status" id="ra-status"></p>
     </div>
@@ -126,6 +127,7 @@
   }
 
   let speakInFlight = false;
+  let lastSpeakText = "";
 
   async function speak(text) {
     const content = (text || selectedText()).trim();
@@ -138,6 +140,7 @@
       stop();
       return;
     }
+    lastSpeakText = content;
     speakInFlight = true;
     showPanel(true);
     setStatus("Reading…");
@@ -172,12 +175,22 @@
     });
   }
 
+  function resume() {
+    if (!lastSpeakText) {
+      setStatus("Nothing to resume");
+      showPanel(false);
+      return;
+    }
+    speak(lastSpeakText);
+  }
+
   root.querySelector(".ra-close").addEventListener("click", () => {
     stop();
     hidePanel();
   });
   root.querySelector(".ra-speak").addEventListener("click", () => speak());
   root.querySelector(".ra-stop").addEventListener("click", stop);
+  root.querySelector(".ra-resume").addEventListener("click", resume);
 
   for (const el of [voiceEl, speedEl, volumeEl]) {
     el.addEventListener("input", () => {

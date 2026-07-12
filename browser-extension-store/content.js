@@ -20,6 +20,8 @@
 
   let utterQueue = [];
   let speaking = false;
+  let paused = false;
+  let lastSpeakText = "";
 
   const root = document.createElement("div");
   root.id = "read-aloud-root";
@@ -41,6 +43,7 @@
       <div class="ra-actions">
         <button class="ra-btn ra-speak" type="button">Speak</button>
         <button class="ra-btn ra-stop" type="button">Stop</button>
+        <button class="ra-btn ra-resume" type="button">Resume</button>
       </div>
       <p class="ra-status" id="ra-status"></p>
     </div>
@@ -78,7 +81,6 @@
   function loadVoicesIntoSelect(preferredURI) {
     const voices = speechSynthesis.getVoices();
     voiceEl.innerHTML = "";
-    // Prefer English voices first, then the rest.
     const sorted = [...voices].sort((a, b) => {
       const ae = a.lang.startsWith("en") ? 0 : 1;
       const be = b.lang.startsWith("en") ? 0 : 1;
@@ -126,7 +128,6 @@
   }
 
   function chunkText(text) {
-    // Web Speech can choke on very long utterances — split on sentences.
     const parts = [];
     const cleaned = text.replace(/\s+/g, " ").trim();
     if (cleaned.length <= 1800) return [cleaned];
@@ -148,16 +149,43 @@
   }
 
   function stopSpeech() {
+    // Prefer pause so Resume can continue mid-passage when the browser supports it.
+    if (speechSynthesis.speaking && !speechSynthesis.paused) {
+      speechSynthesis.pause();
+      paused = true;
+      root.classList.remove("ra-playing");
+      setStatus("Paused");
+      return;
+    }
     speaking = false;
+    paused = false;
     utterQueue = [];
     speechSynthesis.cancel();
     root.classList.remove("ra-playing");
     setStatus("Stopped");
   }
 
+  function resumeSpeech() {
+    if (speechSynthesis.paused || paused) {
+      speechSynthesis.resume();
+      paused = false;
+      speaking = true;
+      root.classList.add("ra-playing");
+      setStatus("Playing…");
+      return;
+    }
+    if (lastSpeakText) {
+      speak(lastSpeakText);
+      return;
+    }
+    setStatus("Nothing to resume");
+    showPanel();
+  }
+
   function speakNext() {
     if (!speaking || !utterQueue.length) {
       speaking = false;
+      paused = false;
       root.classList.remove("ra-playing");
       setStatus(utterQueue.length ? "Ready" : "Done");
       return;
@@ -173,7 +201,11 @@
     u.onend = () => speakNext();
     u.onerror = () => {
       setStatus("Speech error");
-      stopSpeech();
+      speaking = false;
+      paused = false;
+      utterQueue = [];
+      speechSynthesis.cancel();
+      root.classList.remove("ra-playing");
     };
     speechSynthesis.speak(u);
   }
@@ -191,13 +223,16 @@
       return;
     }
     await saveSettings();
-    stopSpeech();
+    lastSpeakText = content;
+    speaking = false;
+    paused = false;
+    utterQueue = [];
+    speechSynthesis.cancel();
     showPanel();
     speaking = true;
     root.classList.add("ra-playing");
     setStatus("Playing…");
     utterQueue = chunkText(content.slice(0, 50000));
-    // Chrome sometimes needs getVoices() warmed up.
     if (!speechSynthesis.getVoices().length) {
       await new Promise((r) => {
         speechSynthesis.addEventListener("voiceschanged", r, { once: true });
@@ -209,11 +244,15 @@
   }
 
   root.querySelector(".ra-close").addEventListener("click", () => {
-    stopSpeech();
+    speaking = false;
+    paused = false;
+    utterQueue = [];
+    speechSynthesis.cancel();
     hidePanel();
   });
   root.querySelector(".ra-speak").addEventListener("click", () => speak());
   root.querySelector(".ra-stop").addEventListener("click", stopSpeech);
+  root.querySelector(".ra-resume").addEventListener("click", resumeSpeech);
 
   for (const el of [voiceEl, rateEl, pitchEl, volumeEl]) {
     el.addEventListener("input", () => {
@@ -236,9 +275,13 @@
       sendResponse({ ok: true });
       return true;
     }
+    if (message?.type === "read-aloud-resume") {
+      resumeSpeech();
+      sendResponse({ ok: true });
+      return true;
+    }
   });
 
-  // Voices often load asynchronously.
   speechSynthesis.addEventListener("voiceschanged", () => {
     loadVoicesIntoSelect(voiceEl.value);
   });

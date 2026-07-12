@@ -116,3 +116,25 @@ document.getElementById("test").addEventListener("click", async () => {
     }
   );
 });
+
+document.getElementById("stop").addEventListener("click", () => {
+  statusEl.textContent = "Stopping…";
+  chrome.runtime.sendMessage({ type: "stop" }, (response) => {
+    if (chrome.runtime.lastError) {
+      statusEl.textContent = chrome.runtime.lastError.message;
+      return;
+    }
+    statusEl.textContent = response?.ok === false ? response?.error || "Failed" : "Stopped";
+  });
+});
+
+document.getElementById("resume").addEventListener("click", () => {
+  statusEl.textContent = "Resuming…";
+  chrome.runtime.sendMessage({ type: "resume" }, (response) => {
+    if (chrome.runtime.lastError) {
+      statusEl.textContent = chrome.runtime.lastError.message;
+      return;
+    }
+    statusEl.textContent = response?.ok ? "Playing…" : response?.error || "Failed";
+  });
+});

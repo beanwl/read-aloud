@@ -21,9 +21,13 @@
   <label for="volume">Volume <span id="volumeVal">1x</span></label>
   <input id="volume" type="range" min="0" max="8" step="1" />
 
-  <div class="row">
-    <button id="test" type="button">Test</button>
-    <button id="reset" type="button" class="secondary">Reset</button>
+  <div class="row primary">
+    <button id="stop" type="button" class="stop">Stop</button>
+    <button id="resume" type="button" class="resume">Resume</button>
+  </div>
+  <div class="row compact">
+    <button id="test" type="button" class="tiny">Test</button>
+    <button id="reset" type="button" class="tiny secondary">Reset</button>
   </div>
 
   <p id="status" class="status"></p>

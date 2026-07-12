@@ -17,6 +17,9 @@ const DEFAULTS = {
   volumeIndex: DEFAULT_INDEX,
 };
 
+/** Last text spoken — used by Resume after Stop. */
+let lastSpeakText = "";
+
 chrome.runtime.onInstalled.addListener(() => {
   chrome.contextMenus.removeAll(() => {
     chrome.contextMenus.create({
@@ -66,6 +69,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       .catch((err) => sendResponse({ ok: false, error: String(err) }));
     return true;
   }
+  if (message?.type === "resume") {
+    if (!lastSpeakText) {
+      sendResponse({ ok: false, error: "Nothing to resume" });
+      return true;
+    }
+    speak(lastSpeakText)
+      .then((result) => sendResponse(result))
+      .catch((err) => sendResponse({ ok: false, error: String(err) }));
+    return true;
+  }
 });
 
 async function getSettings() {
@@ -83,6 +96,8 @@ function formatPercent(value) {
 }
 
 async function speak(text) {
+  const content = (text || "").trim();
+  if (content) lastSpeakText = content;
   // Stop is handled inside the native host when a new speak starts.
   // Skipping an extra native round-trip here saves noticeable delay.
   const settings = await getSettings();
@@ -91,7 +106,7 @@ async function speak(text) {
   const volume = MULTIPLIERS[settings.volumeIndex] ?? 1;
   const payload = {
     action: "speak",
-    text,
+    text: content,
     voice: settings.voice,
     rate: formatPercent(speed),
     pitch: pitchFromMultiplier(pitch),

@@ -100,8 +100,13 @@
 }
 
 #read-aloud-root .ra-stop {
-  background: #e8eef5;
-  color: #1c2430;
+  background: #c62828;
+  color: #fff;
+}
+
+#read-aloud-root .ra-resume {
+  background: #0f9f6e;
+  color: #fff;
 }
 
 #read-aloud-root .ra-status {
