@@ -116,7 +116,8 @@ function Update-ReadAloudShortcut {
         New-Item -ItemType Directory -Force -Path $dir | Out-Null
     }
     $relaunch = "`"$LauncherExe`""
-    & $SetLnkExe $Path $LauncherExe "" $Root $IconIco $AppId $relaunch | Out-Null
+    # Pass "-" for empty arguments (PowerShell drops real empty strings)
+    & $SetLnkExe $Path $LauncherExe "-" $Root $IconIco $AppId $relaunch | Out-Null
 }
 
 # Wipe stale taskbar pins that point at deleted launchers

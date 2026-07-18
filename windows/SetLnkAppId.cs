@@ -90,6 +90,9 @@ namespace LnkFix
                 workDir = args[3],
                 icon = args[4],
                 appId = args[5];
+            // PowerShell drops empty CLI args; install script passes "-" for none.
+            if (arguments == "-")
+                arguments = "";
             string relaunch =
                 args.Length >= 7 && !string.IsNullOrWhiteSpace(args[6])
                     ? args[6]
