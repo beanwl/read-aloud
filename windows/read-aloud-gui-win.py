@@ -78,11 +78,13 @@ class SingleInstanceLock:
     def __init__(self) -> None:
         import ctypes
 
-        self._mutex = ctypes.windll.kernel32.CreateMutexW(None, False, "Local\\Beanwl.ReadAloud.SingleInstance")
-        self._owned = ctypes.windll.kernel32.GetLastError() != 183  # ERROR_ALREADY_EXISTS
-        if not self._owned:
+        kernel32 = ctypes.windll.kernel32
+        kernel32.SetLastError(0)
+        self._mutex = kernel32.CreateMutexW(None, False, "Local\\Beanwl.ReadAloud.SingleInstance")
+        already_exists = kernel32.GetLastError() == 183  # ERROR_ALREADY_EXISTS
+        if not self._mutex or already_exists:
             if self._mutex:
-                ctypes.windll.kernel32.CloseHandle(self._mutex)
+                kernel32.CloseHandle(self._mutex)
             self._mutex = None
             raise BlockingIOError
         atexit.register(self.release)
