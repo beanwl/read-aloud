@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Read Aloud — Windows desktop GUI (edge-tts + Windows Media Player)."""
+"""Read Aloud — Windows desktop GUI.
+
+Fast path: local Windows SAPI voices (Speakonia-style, offline, instant start).
+Neural path: edge-tts streamed into ffplay so speech starts before the full file downloads.
+"""
 
 from __future__ import annotations
 
@@ -26,18 +30,22 @@ APP_USER_MODEL_ID = "Beanwl.ReadAloud"
 MULTIPLIERS = [0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0, 4.0]
 DEFAULT_MULT_INDEX = MULTIPLIERS.index(1.0)
 
+# Local SAPI voices first (instant, like Speakonia). Neural voices need the network.
 VOICES: list[tuple[str, str]] = [
-    ("Andrew (US male)", "en-US-AndrewNeural"),
-    ("Guy (US male)", "en-US-GuyNeural"),
-    ("Eric (US male)", "en-US-EricNeural"),
-    ("Brian (US male)", "en-US-BrianNeural"),
-    ("Christopher (US male)", "en-US-ChristopherNeural"),
-    ("Jenny (US female)", "en-US-JennyNeural"),
-    ("Aria (US female)", "en-US-AriaNeural"),
-    ("Michelle (US female)", "en-US-MichelleNeural"),
-    ("Emma (US female)", "en-US-EmmaNeural"),
-    ("Ana (US female)", "en-US-AnaNeural"),
+    ("David — local/fast", "sapi:Microsoft David Desktop"),
+    ("Zira — local/fast", "sapi:Microsoft Zira Desktop"),
+    ("Andrew (neural)", "en-US-AndrewNeural"),
+    ("Guy (neural)", "en-US-GuyNeural"),
+    ("Eric (neural)", "en-US-EricNeural"),
+    ("Brian (neural)", "en-US-BrianNeural"),
+    ("Christopher (neural)", "en-US-ChristopherNeural"),
+    ("Jenny (neural)", "en-US-JennyNeural"),
+    ("Aria (neural)", "en-US-AriaNeural"),
+    ("Michelle (neural)", "en-US-MichelleNeural"),
+    ("Emma (neural)", "en-US-EmmaNeural"),
+    ("Ana (neural)", "en-US-AnaNeural"),
 ]
+DEFAULT_VOICE_ID = "sapi:Microsoft David Desktop"
 
 
 def _format_multiplier(value: float) -> str:
@@ -53,6 +61,47 @@ def _percent_from_multiplier(value: float) -> str:
 def _pitch_from_multiplier(value: float) -> str:
     hz = int(round(20 * math.log2(value)))
     return f"{hz:+d}Hz"
+
+
+def _sapi_rate_from_multiplier(value: float) -> int:
+    """Map 0.25x–4x onto SAPI Rate (-10…10)."""
+    return max(-10, min(10, int(round(5 * math.log2(value)))))
+
+
+def _sapi_volume_from_multiplier(value: float) -> int:
+    return max(0, min(100, int(round(value * 100))))
+
+
+def _is_sapi_voice(voice_id: str) -> bool:
+    return voice_id.startswith("sapi:")
+
+
+def _no_window_kwargs() -> dict:
+    if sys.platform != "win32":
+        return {}
+    return {"creationflags": subprocess.CREATE_NO_WINDOW}
+
+
+def _kill_process_tree(proc: subprocess.Popen | None) -> None:
+    if not proc or proc.poll() is not None:
+        return
+    try:
+        if sys.platform == "win32":
+            subprocess.run(
+                ["taskkill", "/F", "/T", "/PID", str(proc.pid)],
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                **_no_window_kwargs(),
+            )
+        else:
+            proc.terminate()
+            proc.wait(timeout=2)
+    except (OSError, subprocess.TimeoutExpired):
+        try:
+            proc.kill()
+        except OSError:
+            pass
 
 
 def _read_clipboard_text() -> str:
@@ -139,12 +188,6 @@ def acquire_single_instance() -> SingleInstanceLock:
         sys.exit(0)
 
 
-def _no_window_kwargs() -> dict:
-    if sys.platform != "win32":
-        return {}
-    return {"creationflags": subprocess.CREATE_NO_WINDOW}
-
-
 def _which_player(name: str) -> str | None:
     found = shutil.which(name)
     if found:
@@ -176,61 +219,109 @@ def _which_player(name: str) -> str | None:
     return None
 
 
-def _play_mp3(path: Path) -> subprocess.Popen:
-    """Play MP3. Prefer ffplay — WMPlayer.OCX often sticks in Transitioning and is silent."""
-    ffplay = _which_player("ffplay")
-    if ffplay:
-        return subprocess.Popen(
-            [ffplay, "-nodisp", "-autoexit", "-loglevel", "quiet", str(path)],
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            **_no_window_kwargs(),
-        )
-
-    ffmpeg = _which_player("ffmpeg")
-    if ffmpeg:
-        wav = path.with_suffix(".wav")
-        subprocess.run(
-            [ffmpeg, "-y", "-i", str(path), str(wav)],
-            check=True,
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            **_no_window_kwargs(),
-        )
-        ps = f"""
+def _speak_sapi(
+    text: str,
+    voice_id: str,
+    speed_mult: float,
+    volume_mult: float,
+) -> subprocess.Popen:
+    """Speak via local Windows SAPI (same stack Speakonia uses) — starts immediately."""
+    voice_name = voice_id.split(":", 1)[1]
+    rate = _sapi_rate_from_multiplier(speed_mult)
+    volume = _sapi_volume_from_multiplier(volume_mult)
+    text_file = Path(tempfile.mkstemp(prefix="read-aloud-sapi-", suffix=".txt")[1])
+    text_file.write_text(text, encoding="utf-8")
+    # Keep path for cleanup by caller via proc attribution — delete after speak in PS.
+    ps = f"""
 $ErrorActionPreference = 'Stop'
-Add-Type -AssemblyName System.Windows.Forms
-$p = New-Object System.Media.SoundPlayer '{str(wav).replace("'", "''")}'
-$p.PlaySync()
+Add-Type -AssemblyName System.Speech
+$synth = New-Object System.Speech.Synthesis.SpeechSynthesizer
+try {{
+  $synth.SelectVoice('{voice_name.replace("'", "''")}')
+}} catch {{
+  # Fall back to default installed voice if the named one is missing.
+}}
+$synth.Rate = {rate}
+$synth.Volume = {volume}
+$synth.Speak([System.IO.File]::ReadAllText('{str(text_file).replace("'", "''")}'))
+Remove-Item -LiteralPath '{str(text_file).replace("'", "''")}' -Force -ErrorAction SilentlyContinue
 """
-        return subprocess.Popen(
-            [
-                "powershell",
-                "-NoProfile",
-                "-ExecutionPolicy",
-                "Bypass",
-                "-Command",
-                ps,
-            ],
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            **_no_window_kwargs(),
-        )
-
-    raise RuntimeError(
-        "No audio player found. Install ffmpeg (includes ffplay), then try Speak again.\n"
-        "winget install Gyan.FFmpeg"
+    return subprocess.Popen(
+        [
+            "powershell",
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            ps,
+        ],
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        **_no_window_kwargs(),
     )
 
 
-async def _synthesize(text: str, voice: str, rate: str, pitch: str, volume: str, out: Path) -> None:
+def _speak_edge_stream(
+    text: str,
+    voice: str,
+    rate: str,
+    pitch: str,
+    volume: str,
+    should_stop,
+) -> subprocess.Popen:
+    """Stream edge-tts audio into ffplay so speech starts in about a second."""
     import edge_tts
 
-    communicate = edge_tts.Communicate(text, voice, rate=rate, pitch=pitch, volume=volume)
-    await communicate.save(str(out))
+    ffplay = _which_player("ffplay")
+    if not ffplay:
+        raise RuntimeError(
+            "ffplay not found for neural voices. Install ffmpeg:\nwinget install Gyan.FFmpeg\n"
+            "Or pick a local/fast voice (David / Zira)."
+        )
+
+    proc = subprocess.Popen(
+        [
+            ffplay,
+            "-nodisp",
+            "-autoexit",
+            "-loglevel",
+            "quiet",
+            "-f",
+            "mp3",
+            "-i",
+            "pipe:0",
+        ],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        **_no_window_kwargs(),
+    )
+
+    async def _pump() -> None:
+        assert proc.stdin is not None
+        communicate = edge_tts.Communicate(text, voice, rate=rate, pitch=pitch, volume=volume)
+        try:
+            async for chunk in communicate.stream():
+                if should_stop():
+                    break
+                if chunk["type"] == "audio":
+                    proc.stdin.write(chunk["data"])
+                    proc.stdin.flush()
+        finally:
+            try:
+                proc.stdin.close()
+            except OSError:
+                pass
+
+    def _runner() -> None:
+        try:
+            asyncio.run(_pump())
+        except Exception:
+            _kill_process_tree(proc)
+
+    threading.Thread(target=_runner, daemon=True).start()
+    return proc
 
 
 class ReadAloudApp:
@@ -244,7 +335,6 @@ class ReadAloudApp:
         self._busy = False
         self._speak_generation = 0
         self._player_proc: subprocess.Popen | None = None
-        self._temp_mp3: Path | None = None
         self._last_clipboard = ""
         self._poll_ms = 350
 
@@ -313,7 +403,7 @@ class ReadAloudApp:
         body.add(text_frame, weight=1)
 
         ttk.Label(props, text="Voice").pack(anchor=tk.W)
-        self.voice_var = tk.StringVar(value="en-US-AndrewNeural")
+        self.voice_var = tk.StringVar(value=DEFAULT_VOICE_ID)
         self.voice_display = ttk.Combobox(
             props,
             values=[v[0] for v in VOICES],
@@ -321,7 +411,7 @@ class ReadAloudApp:
             width=28,
         )
         self.voice_display.pack(fill=tk.X, pady=(2, 10))
-        self.voice_display.set("Andrew (US male)")
+        self.voice_display.set("David — local/fast")
 
         def on_voice_pick(_event=None) -> None:
             idx = self.voice_display.current()
@@ -417,24 +507,10 @@ class ReadAloudApp:
 
     def stop(self) -> None:
         self._speak_generation += 1
-        if self._player_proc and self._player_proc.poll() is None:
-            self._player_proc.terminate()
-            try:
-                self._player_proc.wait(timeout=2)
-            except subprocess.TimeoutExpired:
-                self._player_proc.kill()
+        _kill_process_tree(self._player_proc)
         self._player_proc = None
-        self._cleanup_temp()
         self._busy = False
         self.status.config(text="Stopped")
-
-    def _cleanup_temp(self) -> None:
-        if self._temp_mp3 and self._temp_mp3.exists():
-            try:
-                self._temp_mp3.unlink()
-            except OSError:
-                pass
-        self._temp_mp3 = None
 
     def speak(self) -> None:
         text = self._get_text()
@@ -446,25 +522,33 @@ class ReadAloudApp:
         self._busy = True
         self._speak_generation += 1
         gen = self._speak_generation
-        self.status.config(text="Generating speech…")
 
         voice = self.voice_var.get()
-        rate = _percent_from_multiplier(MULTIPLIERS[int(self.speed_var.get())])
+        speed_mult = MULTIPLIERS[int(self.speed_var.get())]
+        volume_mult = MULTIPLIERS[int(self.volume_var.get())]
+        rate = _percent_from_multiplier(speed_mult)
         pitch = _pitch_from_multiplier(MULTIPLIERS[int(self.pitch_var.get())])
-        volume = _percent_from_multiplier(MULTIPLIERS[int(self.volume_var.get())])
+        volume = _percent_from_multiplier(volume_mult)
+
+        if _is_sapi_voice(voice):
+            self.status.config(text="Speaking…")
+        else:
+            self.status.config(text="Starting neural voice…")
 
         def worker() -> None:
-            tmp = Path(tempfile.mkstemp(prefix="read-aloud-", suffix=".mp3")[1])
             try:
-                asyncio.run(_synthesize(text, voice, rate, pitch, volume, tmp))
-                if gen != self._speak_generation:
-                    tmp.unlink(missing_ok=True)
-                    return
-                self._temp_mp3 = tmp
-                self.root.after(0, lambda: self.status.config(text="Speaking…"))
-                proc = _play_mp3(tmp)
-                self._player_proc = proc
-                proc.wait()
+                if _is_sapi_voice(voice):
+                    proc = _speak_sapi(text, voice, speed_mult, volume_mult)
+                    self._player_proc = proc
+                    proc.wait()
+                else:
+                    def should_stop() -> bool:
+                        return gen != self._speak_generation
+
+                    self.root.after(0, lambda: self.status.config(text="Speaking…"))
+                    proc = _speak_edge_stream(text, voice, rate, pitch, volume, should_stop)
+                    self._player_proc = proc
+                    proc.wait()
             except Exception as exc:
                 self.root.after(
                     0,
@@ -479,7 +563,6 @@ class ReadAloudApp:
     def _speak_done(self) -> None:
         self._busy = False
         self._player_proc = None
-        self._cleanup_temp()
         self.status.config(text="Ready")
 
     def _load_settings(self) -> None:
@@ -491,12 +574,18 @@ class ReadAloudApp:
         except (OSError, json.JSONDecodeError):
             self._on_slider_move()
             return
-        voice = data.get("voice", "en-US-AndrewNeural")
+        voice = data.get("voice", DEFAULT_VOICE_ID)
+        # Migrate older default to local/fast unless user picked something else later.
+        if voice == "en-US-AndrewNeural" and "voice" in data:
+            pass  # keep user's saved Andrew if they saved settings before
         self.voice_var.set(voice)
         for label, vid in VOICES:
             if vid == voice:
                 self.voice_display.set(label)
                 break
+        else:
+            self.voice_var.set(DEFAULT_VOICE_ID)
+            self.voice_display.set("David — local/fast")
         for key, var in (
             ("pitch_index", self.pitch_var),
             ("speed_index", self.speed_var),

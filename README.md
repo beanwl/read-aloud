@@ -26,7 +26,8 @@ See **[STORE.md](STORE.md)** to pack and publish.
 ### Read Aloud (Windows)
 
 - **Desktop GUI** — paste clipboard, voice / speed / pitch / volume (0.25x–4x), Save Settings
-- **Neural voices** via edge-tts (same Andrew / Jenny / etc. voices as Linux Pro)
+- **Local/fast voices** (David / Zira) via Windows SAPI — Speakinia-style, offline, starts immediately
+- **Neural voices** via edge-tts (Andrew / Jenny / etc.), streamed so speech starts before the full download finishes
 - **Taskbar / Start Menu** shortcuts with the app icon (not the Python icon)
 - **Single-instance GUI** — avoids two windows talking over each other
 
