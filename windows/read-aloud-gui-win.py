@@ -17,6 +17,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 import tkinter as tk
 from pathlib import Path
 from tkinter import messagebox, scrolledtext, ttk
@@ -33,8 +34,8 @@ DEFAULT_MULT_INDEX = MULTIPLIERS.index(1.0)
 
 # Fallback neural list if edge-tts voice query fails.
 NEURAL_VOICE_FALLBACK: list[tuple[str, str]] = [
+    ("Andrew Multi (neural, male) — latest", "en-US-AndrewMultilingualNeural"),
     ("Andrew (neural)", "en-US-AndrewNeural"),
-    ("Andrew Multilingual (neural)", "en-US-AndrewMultilingualNeural"),
     ("Guy (neural)", "en-US-GuyNeural"),
     ("Eric (neural)", "en-US-EricNeural"),
     ("Brian (neural)", "en-US-BrianNeural"),
@@ -51,7 +52,9 @@ NEURAL_VOICE_FALLBACK: list[tuple[str, str]] = [
     ("Emma Multilingual (neural)", "en-US-EmmaMultilingualNeural"),
     ("Ana (neural)", "en-US-AnaNeural"),
 ]
-DEFAULT_VOICE_ID = "sapi:Microsoft David Desktop"
+# Newest broadly available US neural voice (Copilot / Multilingual).
+DEFAULT_VOICE_ID = "en-US-AndrewMultilingualNeural"
+VOICE_CACHE_PATH = Path.home() / "AppData" / "Roaming" / "read-aloud" / "voices-cache.json"
 
 
 def _discover_local_voices() -> list[tuple[str, str]]:
@@ -124,8 +127,30 @@ try {
     return voices
 
 
+def _neural_label(short_name: str, gender: str = "") -> str:
+    nice = short_name.removeprefix("en-US-").replace("Neural", "").replace("Multilingual", " Multi")
+    tag = f"{nice} (neural"
+    if gender:
+        tag += f", {gender.lower()}"
+    tag += ")"
+    if short_name == DEFAULT_VOICE_ID:
+        tag += " — latest"
+    return tag
+
+
 def _discover_neural_voices() -> list[tuple[str, str]]:
-    """All en-US neural voices from edge-tts."""
+    """All en-US neural voices from edge-tts (cached for fast startup)."""
+    try:
+        if VOICE_CACHE_PATH.exists():
+            age = time.time() - VOICE_CACHE_PATH.stat().st_mtime
+            if age < 7 * 24 * 3600:
+                data = json.loads(VOICE_CACHE_PATH.read_text(encoding="utf-8"))
+                cached = [(str(a), str(b)) for a, b in data.get("neural", [])]
+                if cached:
+                    return cached
+    except (OSError, json.JSONDecodeError, TypeError, ValueError):
+        pass
+
     try:
         import edge_tts
 
@@ -142,19 +167,28 @@ def _discover_neural_voices() -> list[tuple[str, str]]:
         locale = item.get("Locale") or ""
         if not short.startswith("en-US-") or locale != "en-US":
             continue
-        nice = short.removeprefix("en-US-").replace("Neural", "").replace("Multilingual", " Multi")
-        gender = (item.get("Gender") or "").lower()
-        tag = f"{nice} (neural"
-        if gender:
-            tag += f", {gender}"
-        tag += ")"
-        voices.append((tag, short))
-    voices.sort(key=lambda item: item[0].lower())
-    return voices or list(NEURAL_VOICE_FALLBACK)
+        voices.append((_neural_label(short, item.get("Gender") or ""), short))
+    voices.sort(key=lambda item: (0 if item[1] == DEFAULT_VOICE_ID else 1, item[0].lower()))
+    if not voices:
+        return list(NEURAL_VOICE_FALLBACK)
+    try:
+        VOICE_CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        VOICE_CACHE_PATH.write_text(
+            json.dumps({"neural": voices}, indent=2),
+            encoding="utf-8",
+        )
+    except OSError:
+        pass
+    return voices
 
 
 def _build_voice_catalog() -> list[tuple[str, str]]:
-    return _discover_local_voices() + _discover_neural_voices()
+    local = _discover_local_voices()
+    neural = _discover_neural_voices()
+    # Put latest US neural first, then other neural, then local/fast.
+    latest = [v for v in neural if v[1] == DEFAULT_VOICE_ID]
+    other_neural = [v for v in neural if v[1] != DEFAULT_VOICE_ID]
+    return latest + other_neural + local
 
 
 def _format_multiplier(value: float) -> str:
@@ -192,25 +226,29 @@ def _no_window_kwargs() -> dict:
 
 
 def _kill_process_tree(proc: subprocess.Popen | None) -> None:
-    if not proc or proc.poll() is not None:
+    if not proc:
         return
-    try:
-        if sys.platform == "win32":
-            subprocess.run(
-                ["taskkill", "/F", "/T", "/PID", str(proc.pid)],
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                **_no_window_kwargs(),
-            )
-        else:
-            proc.terminate()
-            proc.wait(timeout=2)
-    except (OSError, subprocess.TimeoutExpired):
+    extras = getattr(proc, "_read_aloud_extras", None) or []
+    for extra in list(extras) + [proc]:
+        if extra.poll() is not None:
+            continue
         try:
-            proc.kill()
-        except OSError:
-            pass
+            if sys.platform == "win32":
+                subprocess.run(
+                    ["taskkill", "/F", "/T", "/PID", str(extra.pid)],
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    **_no_window_kwargs(),
+                )
+            else:
+                extra.terminate()
+                extra.wait(timeout=2)
+        except (OSError, subprocess.TimeoutExpired):
+            try:
+                extra.kill()
+            except OSError:
+                pass
 
 
 def _read_clipboard_text() -> str:
@@ -418,47 +456,70 @@ def _speak_edge_stream(
     volume: str,
     should_stop,
 ) -> subprocess.Popen:
-    """Stream edge-tts audio into ffplay so speech starts in about a second."""
+    """Stream edge-tts → ffmpeg (wav) → ffplay so audio starts before download finishes."""
     import edge_tts
 
     ffplay = _which_player("ffplay")
-    if not ffplay:
+    ffmpeg = _which_player("ffmpeg")
+    if not ffplay or not ffmpeg:
         raise RuntimeError(
-            "ffplay not found for neural voices. Install ffmpeg:\nwinget install Gyan.FFmpeg\n"
-            "Or pick a local/fast voice (David / Zira)."
+            "ffmpeg/ffplay not found for neural voices. Install ffmpeg:\n"
+            "winget install Gyan.FFmpeg\n"
+            "Or pick a local/fast voice (David / Mark / Zira)."
         )
 
-    proc = subprocess.Popen(
+    # Same reliable pipeline as the Linux speak-daemon (mp3 pipe → wav → player).
+    ff = subprocess.Popen(
+        [
+            ffmpeg,
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-i",
+            "pipe:0",
+            "-f",
+            "wav",
+            "pipe:1",
+        ],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        **_no_window_kwargs(),
+    )
+    play = subprocess.Popen(
         [
             ffplay,
             "-nodisp",
             "-autoexit",
             "-loglevel",
-            "quiet",
+            "error",
             "-f",
-            "mp3",
+            "wav",
             "-i",
             "pipe:0",
         ],
-        stdin=subprocess.PIPE,
+        stdin=ff.stdout,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
         **_no_window_kwargs(),
     )
+    if ff.stdout:
+        ff.stdout.close()
+    play._read_aloud_extras = [ff]  # type: ignore[attr-defined]
 
     async def _pump() -> None:
-        assert proc.stdin is not None
+        assert ff.stdin is not None
         communicate = edge_tts.Communicate(text, voice, rate=rate, pitch=pitch, volume=volume)
         try:
             async for chunk in communicate.stream():
                 if should_stop():
                     break
                 if chunk["type"] == "audio":
-                    proc.stdin.write(chunk["data"])
-                    proc.stdin.flush()
+                    ff.stdin.write(chunk["data"])
+                    ff.stdin.flush()
         finally:
             try:
-                proc.stdin.close()
+                ff.stdin.close()
             except OSError:
                 pass
 
@@ -466,10 +527,10 @@ def _speak_edge_stream(
         try:
             asyncio.run(_pump())
         except Exception:
-            _kill_process_tree(proc)
+            _kill_process_tree(play)
 
     threading.Thread(target=_runner, daemon=True).start()
-    return proc
+    return play
 
 
 class ReadAloudApp:
@@ -562,13 +623,10 @@ class ReadAloudApp:
         self.voice_display.pack(fill=tk.X, pady=(2, 10))
         default_label = next(
             (label for label, vid in self.voices if vid == DEFAULT_VOICE_ID),
-            self.voices[0][0] if self.voices else "David — local/fast",
+            self.voices[0][0] if self.voices else "Andrew Multi (neural) — latest",
         )
         self.voice_display.set(default_label)
-        if self.voices:
-            self.voice_var.set(
-                next((vid for label, vid in self.voices if label == default_label), self.voices[0][1])
-            )
+        self.voice_var.set(DEFAULT_VOICE_ID)
 
         def on_voice_pick(_event=None) -> None:
             idx = self.voice_display.current()
@@ -723,25 +781,36 @@ class ReadAloudApp:
         self.status.config(text="Ready")
 
     def _load_settings(self) -> None:
-        if not SETTINGS_PATH.exists():
-            self._on_slider_move()
-            return
-        try:
-            data = json.loads(SETTINGS_PATH.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            self._on_slider_move()
-            return
+        data: dict = {}
+        if SETTINGS_PATH.exists():
+            try:
+                data = json.loads(SETTINGS_PATH.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                data = {}
+
+        # Prefer latest US neural unless the user explicitly saved another voice after this change.
         voice = data.get("voice", DEFAULT_VOICE_ID)
+        prefer_latest = data.get("prefer_latest_us", True)
+        if prefer_latest and voice != DEFAULT_VOICE_ID:
+            # One-time move onto Andrew Multilingual (latest American neural).
+            voice = DEFAULT_VOICE_ID
+            data["voice"] = voice
+            data["prefer_latest_us"] = False
+            try:
+                SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
+                SETTINGS_PATH.write_text(json.dumps(data, indent=2), encoding="utf-8")
+            except OSError:
+                pass
+
         self.voice_var.set(voice)
         for label, vid in self.voices:
             if vid == voice:
                 self.voice_display.set(label)
                 break
         else:
-            # Saved voice missing — keep a sensible local default.
             fallback = next(
                 ((label, vid) for label, vid in self.voices if vid == DEFAULT_VOICE_ID),
-                self.voices[0] if self.voices else ("David — local/fast", DEFAULT_VOICE_ID),
+                self.voices[0] if self.voices else ("Andrew Multi (neural) — latest", DEFAULT_VOICE_ID),
             )
             self.voice_display.set(fallback[0])
             self.voice_var.set(fallback[1])
@@ -764,6 +833,7 @@ class ReadAloudApp:
             "pitch_index": int(self.pitch_var.get()),
             "speed_index": int(self.speed_var.get()),
             "volume_index": int(self.volume_var.get()),
+            "prefer_latest_us": False,
         }
         SETTINGS_PATH.write_text(json.dumps(data, indent=2), encoding="utf-8")
         self.status.config(text="Settings saved")
