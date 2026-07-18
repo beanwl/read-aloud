@@ -7,7 +7,6 @@ import asyncio
 import atexit
 import json
 import math
-import msvcrt
 import shutil
 import subprocess
 import sys
@@ -20,7 +19,6 @@ from tkinter import messagebox, scrolledtext, ttk
 APP_DIR = Path(__file__).resolve().parent.parent
 WIN_DIR = Path(__file__).resolve().parent
 SETTINGS_PATH = Path.home() / "AppData" / "Roaming" / "read-aloud" / "settings.json"
-LOCK_PATH = Path.home() / "AppData" / "Local" / "read-aloud" / "gui.lock"
 ICON_PNG = APP_DIR / "browser-extension-store" / "icons" / "icon128.png"
 ICON_ICO = WIN_DIR / "read-aloud.ico"
 APP_USER_MODEL_ID = "Beanwl.ReadAloud"
