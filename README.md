@@ -48,7 +48,7 @@ cd read-aloud
 powershell -ExecutionPolicy Bypass -File windows\install-windows.ps1
 ```
 
-That creates a venv, installs dependencies, builds `windows\ReadAloud.exe` (custom icon), and adds Desktop / Start Menu / taskbar shortcuts.
+That creates a venv, installs dependencies, builds `venv\Scripts\ReadAloud.exe` (custom icon), and adds Desktop / Start Menu / taskbar shortcuts.
 
 Or run the GUI directly after `pip install -r requirements.txt` in a venv:
 
@@ -188,6 +188,7 @@ The **Pro** extension in `browser-extension/` needs a local native host and is *
 | Problem | Fix |
 |---------|-----|
 | Taskbar shows Python icon | Re-run `windows\install-windows.ps1`, then launch from the **Read Aloud** shortcut (not raw `pythonw`) |
+| “No pyvenv.cfg file” popup | Re-run `windows\install-windows.ps1` (older builds put the launcher outside the venv) |
 | No sound | Check Windows volume; confirm the status line leaves “Generating speech…” |
 | Double voices | Close the other Read Aloud window — only one instance is allowed |
 | `python` not found | Install Python 3.10+ and tick **Add python.exe to PATH** |

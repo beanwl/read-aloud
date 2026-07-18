@@ -9,7 +9,9 @@ $VenvPython = Join-Path $Root "venv\Scripts\python.exe"
 $VenvPythonw = Join-Path $Root "venv\Scripts\pythonw.exe"
 $VenvPip = Join-Path $Root "venv\Scripts\pip.exe"
 $GuiScript = Join-Path $WinDir "read-aloud-gui-win.py"
-$LauncherExe = Join-Path $WinDir "ReadAloud.exe"
+# Must live next to the venv Scripts so pythonw can find ..\pyvenv.cfg
+$LauncherExe = Join-Path $Root "venv\Scripts\ReadAloud.exe"
+$BrokenLauncher = Join-Path $WinDir "ReadAloud.exe"
 $IconPng = Join-Path $Root "browser-extension-store\icons\icon128.png"
 $IconIco = Join-Path $WinDir "read-aloud.ico"
 $Rcedit = Join-Path $WinDir "rcedit-x64.exe"
@@ -90,6 +92,10 @@ if (-not (Test-Path $Rcedit)) {
 }
 
 Write-Host "Building ReadAloud.exe launcher..."
+# Remove old broken copy outside the venv (causes "No pyvenv.cfg file")
+if (Test-Path $BrokenLauncher) {
+  Remove-Item -Force $BrokenLauncher
+}
 Copy-Item -Force $VenvPythonw $LauncherExe
 & $Rcedit $LauncherExe --set-icon $IconIco
 

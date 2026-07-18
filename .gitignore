@@ -14,3 +14,4 @@ windows/ReadAloud.exe
 windows/rcedit-x64.exe
 windows/SetLnkAppId.exe
 windows/open-chrome-with-extension.bat
+# Launcher is created inside venv/ (already ignored) as venv/Scripts/ReadAloud.exe
