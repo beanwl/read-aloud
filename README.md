@@ -2,11 +2,12 @@
 
 **Speak Selection** is the Chrome Web Store / Edge marketplace extension: highlight text → right-click → hear it read aloud with adjustable voice, speed, pitch, and volume (Web Speech API).
 
-This repo also includes **Read Aloud**, a Linux Pro desktop stack (Tk GUI, native Chrome extension, speak daemon, CLI) that uses Microsoft neural voices via [edge-tts](https://github.com/rany2/edge-tts) (default: **Andrew**, US male).
+This repo also includes **Read Aloud**, a desktop TTS app (Tk GUI + optional Linux Pro stack) that uses Microsoft neural voices via [edge-tts](https://github.com/rany2/edge-tts) (default: **Andrew**, US male).
 
 | Product | Where | Name |
 |---------|--------|------|
 | Marketplace extension | `browser-extension-store/` · [Chrome Web Store](https://chromewebstore.google.com/detail/speak-selection/eldhkkcbhbifaaleikchnmacpbaglgbe) | **Speak Selection** |
+| Windows desktop app | `windows/` | **Read Aloud** |
 | Linux Pro app + native extension | `read-aloud-gui.py`, `browser-extension/`, `native-host/` | **Read Aloud** |
 
 **Repo:** https://github.com/beanwl/read-aloud  
@@ -22,6 +23,13 @@ This repo also includes **Read Aloud**, a Linux Pro desktop stack (Tk GUI, nativ
 
 See **[STORE.md](STORE.md)** to pack and publish.
 
+### Read Aloud (Windows)
+
+- **Desktop GUI** — paste clipboard, voice / speed / pitch / volume (0.25x–4x), Save Settings
+- **Neural voices** via edge-tts (same Andrew / Jenny / etc. voices as Linux Pro)
+- **Taskbar / Start Menu** shortcuts with the app icon (not the Python icon)
+- **Single-instance GUI** — avoids two windows talking over each other
+
 ### Read Aloud (Linux Pro)
 
 - **Desktop GUI** — paste clipboard, voice / speed / pitch / volume (0.25x–4x), Save Settings
@@ -29,6 +37,28 @@ See **[STORE.md](STORE.md)** to pack and publish.
 - **Warm speak daemon** — streams audio so speech starts in about a second
 - **CLI** — speak clipboard, selection, or PDF pages
 - **Single-instance GUI** — avoids two windows talking over each other
+
+## Quick install (Windows)
+
+Requirements: Windows 10/11, Python 3.10+
+
+```powershell
+git clone https://github.com/beanwl/read-aloud.git
+cd read-aloud
+powershell -ExecutionPolicy Bypass -File windows\install-windows.ps1
+```
+
+That creates a venv, installs dependencies, builds `windows\ReadAloud.exe` (custom icon), and adds Desktop / Start Menu / taskbar shortcuts.
+
+Or run the GUI directly after `pip install -r requirements.txt` in a venv:
+
+```powershell
+.\venv\Scripts\pythonw.exe windows\read-aloud-gui-win.py
+```
+
+Settings are saved to `%AppData%\read-aloud\settings.json`.
+
+Optional: load **Speak Selection** in Chrome via `chrome://extensions` → Developer mode → **Load unpacked** → `browser-extension-store\`.
 
 ## Requirements (Linux Pro)
 
@@ -123,6 +153,11 @@ read-aloud/                        # GitHub repo slug (unchanged; keeps Pages pr
 ├── read-aloud-gui.py              # Linux Pro desktop app
 ├── read-aloud-tester.py           # Daemon / playback tester
 ├── speak*.sh                      # CLI helpers
+├── windows/                       # Windows desktop app
+│   ├── read-aloud-gui-win.py      # Tk GUI (edge-tts + Windows Media Player)
+│   ├── install-windows.ps1        # venv, launcher exe, shortcuts, taskbar pin
+│   ├── launch-read-aloud.vbs      # Shortcut helper
+│   └── read-aloud.ico             # App / taskbar icon
 ├── browser-extension/             # Chrome MV3 Pro (native host / Linux) — Read Aloud
 ├── browser-extension-store/       # Chrome/Edge marketplace — Speak Selection
 ├── native-host/                   # Native messaging + speak daemon
@@ -148,6 +183,15 @@ Privacy policy: https://beanwl.github.io/read-aloud/privacy.html ([`docs/privacy
 
 The **Pro** extension in `browser-extension/` needs a local native host and is **not** Store-ready.
 
+## Troubleshooting (Windows)
+
+| Problem | Fix |
+|---------|-----|
+| Taskbar shows Python icon | Re-run `windows\install-windows.ps1`, then launch from the **Read Aloud** shortcut (not raw `pythonw`) |
+| No sound | Check Windows volume; confirm the status line leaves “Generating speech…” |
+| Double voices | Close the other Read Aloud window — only one instance is allowed |
+| `python` not found | Install Python 3.10+ and tick **Add python.exe to PATH** |
+
 ## Troubleshooting (Linux Pro)
 
 | Problem | Fix |
@@ -160,4 +204,4 @@ The **Pro** extension in `browser-extension/` needs a local native host and is *
 
 ## License
 
-Use freely for personal projects. Marketplace voices are the browser’s built-in Web Speech voices. Linux Pro voices are provided by Microsoft’s online TTS via edge-tts — respect their terms of use.
+Use freely for personal projects. Marketplace voices are the browser’s built-in Web Speech voices. Desktop (Windows / Linux Pro) voices are provided by Microsoft’s online TTS via edge-tts — respect their terms of use.
