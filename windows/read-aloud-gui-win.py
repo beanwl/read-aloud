@@ -8,6 +8,7 @@ import atexit
 import json
 import math
 import msvcrt
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -110,31 +111,90 @@ def acquire_single_instance() -> SingleInstanceLock:
         sys.exit(0)
 
 
+def _no_window_kwargs() -> dict:
+    if sys.platform != "win32":
+        return {}
+    return {"creationflags": subprocess.CREATE_NO_WINDOW}
+
+
+def _which_player(name: str) -> str | None:
+    found = shutil.which(name)
+    if found:
+        return found
+    # Common WinGet / local installs may not be on PATH for GUI launches.
+    candidates = [
+        Path.home()
+        / "AppData"
+        / "Local"
+        / "Microsoft"
+        / "WinGet"
+        / "Packages"
+        / "Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe"
+        / "ffmpeg-8.1.1-full_build"
+        / "bin"
+        / f"{name}.exe",
+        Path(r"C:\ffmpeg\bin") / f"{name}.exe",
+        Path(r"C:\Program Files\ffmpeg\bin") / f"{name}.exe",
+    ]
+    for path in candidates:
+        if path.exists():
+            return str(path)
+    # Broader WinGet search (version folder names vary).
+    winget_root = Path.home() / "AppData" / "Local" / "Microsoft" / "WinGet" / "Packages"
+    if winget_root.exists():
+        matches = list(winget_root.glob(f"Gyan.FFmpeg*/ffmpeg-*/bin/{name}.exe"))
+        if matches:
+            return str(matches[0])
+    return None
+
+
 def _play_mp3(path: Path) -> subprocess.Popen:
-    """Play MP3 via Windows Media Player COM (no extra window)."""
-    ps = f"""
+    """Play MP3. Prefer ffplay — WMPlayer.OCX often sticks in Transitioning and is silent."""
+    ffplay = _which_player("ffplay")
+    if ffplay:
+        return subprocess.Popen(
+            [ffplay, "-nodisp", "-autoexit", "-loglevel", "quiet", str(path)],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            **_no_window_kwargs(),
+        )
+
+    ffmpeg = _which_player("ffmpeg")
+    if ffmpeg:
+        wav = path.with_suffix(".wav")
+        subprocess.run(
+            [ffmpeg, "-y", "-i", str(path), str(wav)],
+            check=True,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            **_no_window_kwargs(),
+        )
+        ps = f"""
 $ErrorActionPreference = 'Stop'
-$player = New-Object -ComObject WMPlayer.OCX
-$player.URL = '{str(path).replace("'", "''")}'
-$player.settings.volume = 100
-$player.controls.play()
-while ($player.playState -ne 1) {{
-  Start-Sleep -Milliseconds 150
-}}
+Add-Type -AssemblyName System.Windows.Forms
+$p = New-Object System.Media.SoundPlayer '{str(wav).replace("'", "''")}'
+$p.PlaySync()
 """
-    return subprocess.Popen(
-        [
-            "powershell",
-            "-NoProfile",
-            "-ExecutionPolicy",
-            "Bypass",
-            "-Command",
-            ps,
-        ],
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0,
+        return subprocess.Popen(
+            [
+                "powershell",
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-Command",
+                ps,
+            ],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            **_no_window_kwargs(),
+        )
+
+    raise RuntimeError(
+        "No audio player found. Install ffmpeg (includes ffplay), then try Speak again.\n"
+        "winget install Gyan.FFmpeg"
     )
 
 
