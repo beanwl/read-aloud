@@ -56,8 +56,9 @@ NEURAL_VOICE_FALLBACK: list[tuple[str, str]] = [
     ("Emma Multilingual (neural)", "en-US-EmmaMultilingualNeural"),
     ("Ana (neural)", "en-US-AnaNeural"),
 ]
-# Newest broadly available US neural voice (Copilot / Multilingual).
-DEFAULT_VOICE_ID = "en-US-AndrewMultilingualNeural"
+# Fast default: local OneCore Mark (Speakonia-speed). Neural Andrew stays in the list.
+DEFAULT_VOICE_ID = "onecore:HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Speech_OneCore\\Voices\\Tokens\\MSTTS_V110_enUS_MarkM"
+DEFAULT_NEURAL_VOICE_ID = "en-US-AndrewMultilingualNeural"
 VOICE_CACHE_PATH = Path.home() / "AppData" / "Roaming" / "read-aloud" / "voices-cache.json"
 
 
@@ -137,7 +138,7 @@ def _neural_label(short_name: str, gender: str = "") -> str:
     if gender:
         tag += f", {gender.lower()}"
     tag += ")"
-    if short_name == DEFAULT_VOICE_ID:
+    if short_name == DEFAULT_NEURAL_VOICE_ID:
         tag += " — latest"
     return tag
 
@@ -172,7 +173,7 @@ def _discover_neural_voices() -> list[tuple[str, str]]:
         if not short.startswith("en-US-") or locale != "en-US":
             continue
         voices.append((_neural_label(short, item.get("Gender") or ""), short))
-    voices.sort(key=lambda item: (0 if item[1] == DEFAULT_VOICE_ID else 1, item[0].lower()))
+    voices.sort(key=lambda item: (0 if item[1] == DEFAULT_NEURAL_VOICE_ID else 1, item[0].lower()))
     if not voices:
         return list(NEURAL_VOICE_FALLBACK)
     try:
@@ -189,10 +190,12 @@ def _discover_neural_voices() -> list[tuple[str, str]]:
 def _build_voice_catalog() -> list[tuple[str, str]]:
     local = _discover_local_voices()
     neural = _discover_neural_voices()
-    # Put latest US neural first, then other neural, then local/fast.
-    latest = [v for v in neural if v[1] == DEFAULT_VOICE_ID]
-    other_neural = [v for v in neural if v[1] != DEFAULT_VOICE_ID]
-    return latest + other_neural + local
+    # Local/fast first (Speakonia-speed), then latest neural, then the rest.
+    mark = [v for v in local if "Mark" in v[0]]
+    other_local = [v for v in local if "Mark" not in v[0]]
+    latest = [v for v in neural if v[1] == DEFAULT_NEURAL_VOICE_ID]
+    other_neural = [v for v in neural if v[1] != DEFAULT_NEURAL_VOICE_ID]
+    return mark + other_local + latest + other_neural
 
 
 def _format_multiplier(value: float) -> str:
@@ -273,7 +276,7 @@ def _warm_neural_voice() -> None:
         import edge_tts
 
         async def _hi() -> None:
-            communicate = edge_tts.Communicate("Ready.", DEFAULT_VOICE_ID)
+            communicate = edge_tts.Communicate("Ready.", DEFAULT_NEURAL_VOICE_ID)
             async for chunk in communicate.stream():
                 if chunk.get("type") == "audio":
                     break
@@ -688,7 +691,7 @@ class ReadAloudApp:
         self.voice_display.pack(fill=tk.X, pady=(2, 10))
         default_label = next(
             (label for label, vid in self.voices if vid == DEFAULT_VOICE_ID),
-            self.voices[0][0] if self.voices else "Andrew Multi (neural) — latest",
+            self.voices[0][0] if self.voices else "Mark — local/fast",
         )
         self.voice_display.set(default_label)
         self.voice_var.set(DEFAULT_VOICE_ID)
@@ -870,14 +873,13 @@ class ReadAloudApp:
             except (OSError, json.JSONDecodeError):
                 data = {}
 
-        # Prefer latest US neural unless the user explicitly saved another voice after this change.
+        # One-time switch onto Mark local/fast (Speakonia-speed default).
         voice = data.get("voice", DEFAULT_VOICE_ID)
-        prefer_latest = data.get("prefer_latest_us", True)
-        if prefer_latest and voice != DEFAULT_VOICE_ID:
-            # One-time move onto Andrew Multilingual (latest American neural).
+        prefer_fast = data.get("prefer_fast_local", True)
+        if prefer_fast and voice != DEFAULT_VOICE_ID:
             voice = DEFAULT_VOICE_ID
             data["voice"] = voice
-            data["prefer_latest_us"] = False
+            data["prefer_fast_local"] = False
             try:
                 SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
                 SETTINGS_PATH.write_text(json.dumps(data, indent=2), encoding="utf-8")
@@ -890,9 +892,13 @@ class ReadAloudApp:
                 self.voice_display.set(label)
                 break
         else:
+            # Resolve Mark by label if the onecore token id differs across machines.
             fallback = next(
-                ((label, vid) for label, vid in self.voices if vid == DEFAULT_VOICE_ID),
-                self.voices[0] if self.voices else ("Andrew Multi (neural) — latest", DEFAULT_VOICE_ID),
+                ((label, vid) for label, vid in self.voices if "Mark" in label and "local" in label),
+                next(
+                    ((label, vid) for label, vid in self.voices if vid == DEFAULT_VOICE_ID),
+                    self.voices[0] if self.voices else ("Mark — local/fast", DEFAULT_VOICE_ID),
+                ),
             )
             self.voice_display.set(fallback[0])
             self.voice_var.set(fallback[1])
@@ -926,7 +932,7 @@ class ReadAloudApp:
             "pitch_index": int(self.pitch_var.get()),
             "speed_index": int(self.speed_var.get()),
             "volume_index": int(self.volume_var.get()),
-            "prefer_latest_us": False,
+            "prefer_fast_local": False,
             "prefer_faster_speed": False,
         }
         SETTINGS_PATH.write_text(json.dumps(data, indent=2), encoding="utf-8")
