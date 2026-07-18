@@ -328,24 +328,38 @@ def _read_windows_clipboard() -> str:
     user32 = ctypes.windll.user32
     kernel32 = ctypes.windll.kernel32
     CF_UNICODETEXT = 13
-    GMEM_MOVEABLE = 0x0002
 
-    if not user32.OpenClipboard(None):
-        return ""
+    # Critical on 64-bit Windows: default ctypes restype truncates handles/pointers.
+    user32.OpenClipboard.argtypes = [wintypes.HWND]
+    user32.OpenClipboard.restype = wintypes.BOOL
+    user32.CloseClipboard.argtypes = []
+    user32.CloseClipboard.restype = wintypes.BOOL
+    user32.GetClipboardData.argtypes = [wintypes.UINT]
+    user32.GetClipboardData.restype = ctypes.c_void_p
+    kernel32.GlobalLock.argtypes = [ctypes.c_void_p]
+    kernel32.GlobalLock.restype = ctypes.c_void_p
+    kernel32.GlobalUnlock.argtypes = [ctypes.c_void_p]
+    kernel32.GlobalUnlock.restype = wintypes.BOOL
+
     try:
-        handle = user32.GetClipboardData(CF_UNICODETEXT)
-        if not handle:
-            return ""
-        ptr = kernel32.GlobalLock(handle)
-        if not ptr:
+        if not user32.OpenClipboard(None):
             return ""
         try:
-            data = ctypes.wstring_at(ptr)
-            return data.strip()
+            handle = user32.GetClipboardData(CF_UNICODETEXT)
+            if not handle:
+                return ""
+            ptr = kernel32.GlobalLock(handle)
+            if not ptr:
+                return ""
+            try:
+                data = ctypes.wstring_at(ptr)
+                return (data or "").strip()
+            finally:
+                kernel32.GlobalUnlock(handle)
         finally:
-            kernel32.GlobalUnlock(handle)
-    finally:
-        user32.CloseClipboard()
+            user32.CloseClipboard()
+    except OSError:
+        return ""
 
 
 def _read_clipboard_text() -> str:
