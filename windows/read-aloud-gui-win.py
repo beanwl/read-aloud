@@ -73,41 +73,69 @@ def _read_clipboard_text() -> str:
 
 
 class SingleInstanceLock:
+    """Named mutex so a second taskbar click focuses the open window instead of erroring."""
+
     def __init__(self) -> None:
-        LOCK_PATH.parent.mkdir(parents=True, exist_ok=True)
-        self._fd = open(LOCK_PATH, "a+b")
-        try:
-            msvcrt.locking(self._fd.fileno(), msvcrt.LK_NBLCK, 1)
-        except OSError as exc:
-            self._fd.close()
-            self._fd = None
-            raise BlockingIOError from exc
+        import ctypes
+
+        self._mutex = ctypes.windll.kernel32.CreateMutexW(None, False, "Local\\Beanwl.ReadAloud.SingleInstance")
+        self._owned = ctypes.windll.kernel32.GetLastError() != 183  # ERROR_ALREADY_EXISTS
+        if not self._owned:
+            if self._mutex:
+                ctypes.windll.kernel32.CloseHandle(self._mutex)
+            self._mutex = None
+            raise BlockingIOError
         atexit.register(self.release)
 
     def release(self) -> None:
-        if not self._fd:
+        if not self._mutex:
             return
         try:
-            self._fd.seek(0)
-            msvcrt.locking(self._fd.fileno(), msvcrt.LK_UNLCK, 1)
-            self._fd.close()
+            import ctypes
+
+            ctypes.windll.kernel32.ReleaseMutex(self._mutex)
+            ctypes.windll.kernel32.CloseHandle(self._mutex)
         except OSError:
             pass
-        self._fd = None
+        self._mutex = None
+
+
+def _focus_existing_window() -> bool:
+    """Bring an already-running Read Aloud window to the front."""
+    import ctypes
+    from ctypes import wintypes
+
+    user32 = ctypes.windll.user32
+    found = []
+
+    @ctypes.WINFUNCTYPE(ctypes.c_bool, wintypes.HWND, wintypes.LPARAM)
+    def _enum(hwnd, _lparam):
+        if not user32.IsWindowVisible(hwnd):
+            return True
+        length = user32.GetWindowTextLengthW(hwnd)
+        if length <= 0:
+            return True
+        buf = ctypes.create_unicode_buffer(length + 1)
+        user32.GetWindowTextW(hwnd, buf, length + 1)
+        if buf.value == "Read Aloud":
+            found.append(hwnd)
+        return True
+
+    user32.EnumWindows(_enum, 0)
+    if not found:
+        return False
+    hwnd = found[0]
+    SW_RESTORE = 9
+    user32.ShowWindow(hwnd, SW_RESTORE)
+    user32.SetForegroundWindow(hwnd)
+    return True
 
 
 def acquire_single_instance() -> SingleInstanceLock:
     try:
         return SingleInstanceLock()
     except BlockingIOError:
-        root = tk.Tk()
-        root.withdraw()
-        messagebox.showinfo(
-            "Read Aloud",
-            "Read Aloud is already running.\n\n"
-            "Close the other window first — two copies will talk over each other.",
-        )
-        root.destroy()
+        _focus_existing_window()
         sys.exit(0)
 
 
