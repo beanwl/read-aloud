@@ -318,7 +318,40 @@ def _kill_process_tree(proc: subprocess.Popen | None) -> None:
                 pass
 
 
+def _read_windows_clipboard() -> str:
+    """Read CF_UNICODETEXT from the Win32 clipboard (works across Chrome/Edge/etc.)."""
+    if sys.platform != "win32":
+        return ""
+    import ctypes
+    from ctypes import wintypes
+
+    user32 = ctypes.windll.user32
+    kernel32 = ctypes.windll.kernel32
+    CF_UNICODETEXT = 13
+    GMEM_MOVEABLE = 0x0002
+
+    if not user32.OpenClipboard(None):
+        return ""
+    try:
+        handle = user32.GetClipboardData(CF_UNICODETEXT)
+        if not handle:
+            return ""
+        ptr = kernel32.GlobalLock(handle)
+        if not ptr:
+            return ""
+        try:
+            data = ctypes.wstring_at(ptr)
+            return data.strip()
+        finally:
+            kernel32.GlobalUnlock(handle)
+    finally:
+        user32.CloseClipboard()
+
+
 def _read_clipboard_text() -> str:
+    text = _read_windows_clipboard()
+    if text:
+        return text
     try:
         root = tk._default_root
         if root is None:
@@ -612,17 +645,16 @@ class ReadAloudApp:
         self._speak_generation = 0
         self._player_proc: subprocess.Popen | None = None
         self._last_clipboard = ""
-        self._poll_ms = 350
+        self._poll_ms = 250
+        self._auto_speak = True  # Speakonia-style: copy → speak
         self.voices = _build_voice_catalog()
 
         self._build_ui()
         self._load_settings()
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
 
-        clip = self._read_clipboard()
-        self._last_clipboard = clip
-        if clip:
-            self._set_text(clip)
+        # Seed clipboard watcher without auto-firing whatever is already copied.
+        self._last_clipboard = self._read_clipboard()
         self._poll_clipboard()
         threading.Thread(target=_warm_neural_voice, daemon=True).start()
 
@@ -741,13 +773,21 @@ class ReadAloudApp:
             command=self._on_slider_move,
         ).pack(fill=tk.X, pady=(0, 8))
 
+        self.auto_speak_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(
+            props,
+            text="Auto-speak on copy (Speakonia)",
+            variable=self.auto_speak_var,
+            command=self._on_auto_speak_toggle,
+        ).pack(anchor=tk.W, pady=(4, 8))
+
         btns = ttk.Frame(props)
-        btns.pack(fill=tk.X, pady=(8, 0))
+        btns.pack(fill=tk.X, pady=(0, 0))
         ttk.Button(btns, text="Speak", command=self.speak).pack(fill=tk.X, pady=2)
         ttk.Button(btns, text="Stop", command=self.stop).pack(fill=tk.X, pady=2)
         ttk.Button(btns, text="Save Settings", command=self._save_settings).pack(fill=tk.X, pady=2)
 
-        self.status = ttk.Label(props, text="Ready", wraplength=220)
+        self.status = ttk.Label(props, text="Ready — copy text to speak", wraplength=220)
         self.status.pack(anchor=tk.W, pady=(12, 0))
 
         self.text = scrolledtext.ScrolledText(text_frame, wrap=tk.WORD, font=("Segoe UI", 11))
@@ -766,16 +806,33 @@ class ReadAloudApp:
         return self.text.get("1.0", tk.END).strip()
 
     def _read_clipboard(self) -> str:
+        # Prefer Win32 clipboard so Chrome/Edge copies are detected like Speakonia.
+        win_clip = _read_windows_clipboard()
+        if win_clip:
+            return win_clip
         try:
             return self.root.clipboard_get().strip()
         except tk.TclError:
             return ""
 
+    def _on_auto_speak_toggle(self) -> None:
+        self._auto_speak = bool(self.auto_speak_var.get())
+        self._save_settings()
+        if self._auto_speak:
+            self.status.config(text="Ready — copy text to speak")
+        else:
+            self.status.config(text="Ready")
+
     def _poll_clipboard(self) -> None:
         clip = self._read_clipboard()
         if clip and clip != self._last_clipboard:
             self._last_clipboard = clip
-            self._set_text(clip)
+            # Ignore tiny clipboard noise (single key copies, etc.).
+            if len(clip.strip()) >= 2:
+                self._set_text(clip)
+                if self._auto_speak:
+                    # Speakonia behavior: new copy immediately starts reading.
+                    self.speak()
         self.root.after(self._poll_ms, self._poll_clipboard)
 
     def clear_text(self) -> None:
@@ -923,6 +980,9 @@ class ReadAloudApp:
                 SETTINGS_PATH.write_text(json.dumps(data, indent=2), encoding="utf-8")
             except OSError:
                 pass
+        if "auto_speak" in data:
+            self._auto_speak = bool(data["auto_speak"])
+            self.auto_speak_var.set(self._auto_speak)
         self._on_slider_move()
 
     def _save_settings(self) -> None:
@@ -932,6 +992,7 @@ class ReadAloudApp:
             "pitch_index": int(self.pitch_var.get()),
             "speed_index": int(self.speed_var.get()),
             "volume_index": int(self.volume_var.get()),
+            "auto_speak": bool(self.auto_speak_var.get()),
             "prefer_fast_local": False,
             "prefer_faster_speed": False,
         }
