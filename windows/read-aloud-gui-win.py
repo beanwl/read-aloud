@@ -11,6 +11,7 @@ import asyncio
 import atexit
 import json
 import math
+import os
 import shutil
 import subprocess
 import sys
@@ -229,22 +230,43 @@ def _speak_sapi(
     voice_name = voice_id.split(":", 1)[1]
     rate = _sapi_rate_from_multiplier(speed_mult)
     volume = _sapi_volume_from_multiplier(volume_mult)
-    text_file = Path(tempfile.mkstemp(prefix="read-aloud-sapi-", suffix=".txt")[1])
+    # mkstemp leaves the handle open; on Windows that locks the file from PowerShell.
+    fd, raw_path = tempfile.mkstemp(prefix="read-aloud-sapi-", suffix=".txt")
+    os.close(fd)
+    text_file = Path(raw_path)
     text_file.write_text(text, encoding="utf-8")
-    # Keep path for cleanup by caller via proc attribution — delete after speak in PS.
+    text_path = str(text_file).replace("'", "''")
+    voice_lit = voice_name.replace("'", "''")
+    # Match token inside COM description, e.g. "David" / "Zira".
+    voice_token = voice_name.replace("Microsoft ", "").replace(" Desktop", "").replace("'", "''")
+    # Prefer classic SAPI.SpVoice (what Speakonia uses); fall back to System.Speech.
     ps = f"""
 $ErrorActionPreference = 'Stop'
-Add-Type -AssemblyName System.Speech
-$synth = New-Object System.Speech.Synthesis.SpeechSynthesizer
+$text = [System.IO.File]::ReadAllText('{text_path}')
+$ok = $false
 try {{
-  $synth.SelectVoice('{voice_name.replace("'", "''")}')
-}} catch {{
-  # Fall back to default installed voice if the named one is missing.
+  $voice = New-Object -ComObject SAPI.SpVoice
+  foreach ($v in $voice.GetVoices()) {{
+    $desc = $v.GetDescription()
+    if ($desc -like '*{voice_token}*' -or $desc -like '*{voice_lit}*') {{
+      $voice.Voice = $v
+      break
+    }}
+  }}
+  $voice.Rate = {rate}
+  $voice.Volume = {volume}
+  $voice.Speak($text) | Out-Null
+  $ok = $true
+}} catch {{ }}
+if (-not $ok) {{
+  Add-Type -AssemblyName System.Speech
+  $synth = New-Object System.Speech.Synthesis.SpeechSynthesizer
+  try {{ $synth.SelectVoice('{voice_lit}') }} catch {{ }}
+  $synth.Rate = {rate}
+  $synth.Volume = {volume}
+  $synth.Speak($text)
 }}
-$synth.Rate = {rate}
-$synth.Volume = {volume}
-$synth.Speak([System.IO.File]::ReadAllText('{str(text_file).replace("'", "''")}'))
-Remove-Item -LiteralPath '{str(text_file).replace("'", "''")}' -Force -ErrorAction SilentlyContinue
+Remove-Item -LiteralPath '{text_path}' -Force -ErrorAction SilentlyContinue
 """
     return subprocess.Popen(
         [
