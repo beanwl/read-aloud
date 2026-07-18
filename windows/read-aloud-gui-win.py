@@ -12,6 +12,7 @@ import atexit
 import json
 import math
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -31,6 +32,9 @@ APP_USER_MODEL_ID = "Beanwl.ReadAloud"
 
 MULTIPLIERS = [0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0, 4.0]
 DEFAULT_MULT_INDEX = MULTIPLIERS.index(1.0)
+# Neural voices feel sluggish at 1x on long logs — default a bit quicker.
+DEFAULT_SPEED_INDEX = MULTIPLIERS.index(1.5)
+NEURAL_CHUNK_CHARS = 260
 
 # Fallback neural list if edge-tts voice query fails.
 NEURAL_VOICE_FALLBACK: list[tuple[str, str]] = [
@@ -217,6 +221,66 @@ def _sapi_volume_from_multiplier(value: float) -> int:
 
 def _is_local_voice(voice_id: str) -> bool:
     return voice_id.startswith("sapi:") or voice_id.startswith("onecore:")
+
+
+def _prepare_speech_text(text: str) -> str:
+    """Trim log/URL noise so TTS starts sooner and is less painful to hear."""
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+    text = re.sub(r"https?://\S+", " link ", text)
+    text = re.sub(r"[A-Za-z]:\\[^\s\"']+", " path ", text)
+    text = re.sub(r"\b\d{1,3}(?:\.\d{1,3}){3}\b", " IP address ", text)
+    text = re.sub(r"\b[0-9a-fA-F]{16,}\b", " ", text)
+    text = re.sub(r"^[\*\>\<\|]\s?", "", text, flags=re.MULTILINE)
+    text = re.sub(r"[-=_*]{3,}", " ", text)
+    text = re.sub(r"[^\S\n]+", " ", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
+
+
+def _chunk_text(text: str, size: int = NEURAL_CHUNK_CHARS) -> list[str]:
+    """Split into small chunks so the first neural audio can start quickly."""
+    if len(text) <= size:
+        return [text] if text else []
+    parts = re.split(r"(?<=[.!?])\s+|\n+", text)
+    chunks: list[str] = []
+    buf = ""
+    for part in parts:
+        part = part.strip()
+        if not part:
+            continue
+        candidate = f"{buf} {part}".strip() if buf else part
+        if len(candidate) <= size:
+            buf = candidate
+            continue
+        if buf:
+            chunks.append(buf)
+        if len(part) <= size:
+            buf = part
+            continue
+        for i in range(0, len(part), size):
+            piece = part[i : i + size].strip()
+            if piece:
+                chunks.append(piece)
+        buf = ""
+    if buf:
+        chunks.append(buf)
+    return chunks
+
+
+def _warm_neural_voice() -> None:
+    """Prime edge-tts so the first real Speak has less cold-start delay."""
+    try:
+        import edge_tts
+
+        async def _hi() -> None:
+            communicate = edge_tts.Communicate("Ready.", DEFAULT_VOICE_ID)
+            async for chunk in communicate.stream():
+                if chunk.get("type") == "audio":
+                    break
+
+        asyncio.run(_hi())
+    except Exception:
+        pass
 
 
 def _no_window_kwargs() -> dict:
@@ -557,6 +621,7 @@ class ReadAloudApp:
         if clip:
             self._set_text(clip)
         self._poll_clipboard()
+        threading.Thread(target=_warm_neural_voice, daemon=True).start()
 
     def _set_window_icon(self) -> None:
         if ICON_ICO.exists():
@@ -637,7 +702,7 @@ class ReadAloudApp:
         self.voice_display.bind("<<ComboboxSelected>>", on_voice_pick)
 
         self.pitch_var = tk.IntVar(value=DEFAULT_MULT_INDEX)
-        self.speed_var = tk.IntVar(value=DEFAULT_MULT_INDEX)
+        self.speed_var = tk.IntVar(value=DEFAULT_SPEED_INDEX)
         self.volume_var = tk.IntVar(value=DEFAULT_MULT_INDEX)
 
         self.pitch_label = ttk.Label(props, text="Pitch: 1x")
@@ -744,26 +809,43 @@ class ReadAloudApp:
         rate = _percent_from_multiplier(speed_mult)
         pitch = _pitch_from_multiplier(MULTIPLIERS[int(self.pitch_var.get())])
         volume = _percent_from_multiplier(volume_mult)
+        cleaned = _prepare_speech_text(text)
 
         if _is_local_voice(voice):
             self.status.config(text="Speaking…")
         else:
-            self.status.config(text="Starting neural voice…")
+            self.status.config(text="Starting (quick chunks)…")
 
         def worker() -> None:
             try:
                 if _is_local_voice(voice):
-                    proc = _speak_local(text, voice, speed_mult, volume_mult)
+                    proc = _speak_local(cleaned, voice, speed_mult, volume_mult)
                     self._player_proc = proc
                     proc.wait()
                 else:
                     def should_stop() -> bool:
                         return gen != self._speak_generation
 
-                    self.root.after(0, lambda: self.status.config(text="Speaking…"))
-                    proc = _speak_edge_stream(text, voice, rate, pitch, volume, should_stop)
-                    self._player_proc = proc
-                    proc.wait()
+                    chunks = _chunk_text(cleaned, NEURAL_CHUNK_CHARS)
+                    if not chunks:
+                        return
+                    for index, chunk in enumerate(chunks):
+                        if should_stop():
+                            break
+                        n = len(chunks)
+                        self.root.after(
+                            0,
+                            lambda i=index, total=n: self.status.config(
+                                text=f"Speaking… {i + 1}/{total}"
+                            ),
+                        )
+                        proc = _speak_edge_stream(
+                            chunk, voice, rate, pitch, volume, should_stop
+                        )
+                        self._player_proc = proc
+                        proc.wait()
+                        if should_stop():
+                            break
             except Exception as exc:
                 self.root.after(
                     0,
@@ -824,6 +906,17 @@ class ReadAloudApp:
                     var.set(int(data[key]))
                 except (TypeError, ValueError):
                     pass
+        # One-time bump from sluggish 1x neural default to 1.5x.
+        if data.get("prefer_faster_speed", True) and int(self.speed_var.get()) <= DEFAULT_MULT_INDEX:
+            self.speed_var.set(DEFAULT_SPEED_INDEX)
+            data["speed_index"] = DEFAULT_SPEED_INDEX
+            data["prefer_faster_speed"] = False
+            try:
+                SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
+                data["voice"] = self.voice_var.get()
+                SETTINGS_PATH.write_text(json.dumps(data, indent=2), encoding="utf-8")
+            except OSError:
+                pass
         self._on_slider_move()
 
     def _save_settings(self) -> None:
@@ -834,6 +927,7 @@ class ReadAloudApp:
             "speed_index": int(self.speed_var.get()),
             "volume_index": int(self.volume_var.get()),
             "prefer_latest_us": False,
+            "prefer_faster_speed": False,
         }
         SETTINGS_PATH.write_text(json.dumps(data, indent=2), encoding="utf-8")
         self.status.config(text="Settings saved")
