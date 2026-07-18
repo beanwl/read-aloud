@@ -31,22 +31,130 @@ APP_USER_MODEL_ID = "Beanwl.ReadAloud"
 MULTIPLIERS = [0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0, 4.0]
 DEFAULT_MULT_INDEX = MULTIPLIERS.index(1.0)
 
-# Local SAPI voices first (instant, like Speakonia). Neural voices need the network.
-VOICES: list[tuple[str, str]] = [
-    ("David — local/fast", "sapi:Microsoft David Desktop"),
-    ("Zira — local/fast", "sapi:Microsoft Zira Desktop"),
+# Fallback neural list if edge-tts voice query fails.
+NEURAL_VOICE_FALLBACK: list[tuple[str, str]] = [
     ("Andrew (neural)", "en-US-AndrewNeural"),
+    ("Andrew Multilingual (neural)", "en-US-AndrewMultilingualNeural"),
     ("Guy (neural)", "en-US-GuyNeural"),
     ("Eric (neural)", "en-US-EricNeural"),
     ("Brian (neural)", "en-US-BrianNeural"),
+    ("Brian Multilingual (neural)", "en-US-BrianMultilingualNeural"),
     ("Christopher (neural)", "en-US-ChristopherNeural"),
+    ("Roger (neural)", "en-US-RogerNeural"),
+    ("Steffan (neural)", "en-US-SteffanNeural"),
     ("Jenny (neural)", "en-US-JennyNeural"),
     ("Aria (neural)", "en-US-AriaNeural"),
+    ("Ava (neural)", "en-US-AvaNeural"),
+    ("Ava Multilingual (neural)", "en-US-AvaMultilingualNeural"),
     ("Michelle (neural)", "en-US-MichelleNeural"),
     ("Emma (neural)", "en-US-EmmaNeural"),
+    ("Emma Multilingual (neural)", "en-US-EmmaMultilingualNeural"),
     ("Ana (neural)", "en-US-AnaNeural"),
 ]
 DEFAULT_VOICE_ID = "sapi:Microsoft David Desktop"
+
+
+def _discover_local_voices() -> list[tuple[str, str]]:
+    """All installed Windows TTS voices (classic SAPI + OneCore), Speakinia-style/fast."""
+    ps = r"""
+$ErrorActionPreference = 'SilentlyContinue'
+$seen = @{}
+# Classic desktop voices
+try {
+  Add-Type -AssemblyName System.Speech
+  $s = New-Object System.Speech.Synthesis.SpeechSynthesizer
+  foreach ($v in $s.GetInstalledVoices()) {
+    if (-not $v.Enabled) { continue }
+    $name = $v.VoiceInfo.Name
+    $short = ($name -replace '^Microsoft ','') -replace ' Desktop$',''
+    $key = $short.ToLowerInvariant()
+    if ($seen.ContainsKey($key)) { continue }
+    $seen[$key] = $true
+    Write-Output ("sapi`t$short — local/fast`tsapi:$name")
+  }
+} catch {}
+# OneCore voices (often includes Mark and others not in classic SAPI)
+try {
+  $cat = New-Object -ComObject SAPI.SpObjectTokenCategory
+  $cat.SetId('HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Speech_OneCore\Voices', $false)
+  $tokens = @($cat.EnumerateTokens())
+  foreach ($t in $tokens) {
+    $desc = $t.GetDescription()
+    $short = (($desc -split ' - ')[0] -replace '^Microsoft ','')
+    $key = $short.ToLowerInvariant()
+    if ($seen.ContainsKey($key)) { continue }
+    $seen[$key] = $true
+    Write-Output ("onecore`t$short — local/fast`tonecore:$($t.Id)")
+  }
+} catch {}
+"""
+    try:
+        proc = subprocess.run(
+            [
+                "powershell",
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-Command",
+                ps,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=15,
+            **_no_window_kwargs(),
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return [
+            ("David — local/fast", "sapi:Microsoft David Desktop"),
+            ("Zira — local/fast", "sapi:Microsoft Zira Desktop"),
+        ]
+    voices: list[tuple[str, str]] = []
+    for line in (proc.stdout or "").splitlines():
+        parts = line.strip().split("\t")
+        if len(parts) != 3:
+            continue
+        _kind, label, vid = parts
+        voices.append((label, vid))
+    if not voices:
+        return [
+            ("David — local/fast", "sapi:Microsoft David Desktop"),
+            ("Zira — local/fast", "sapi:Microsoft Zira Desktop"),
+        ]
+    voices.sort(key=lambda item: item[0].lower())
+    return voices
+
+
+def _discover_neural_voices() -> list[tuple[str, str]]:
+    """All en-US neural voices from edge-tts."""
+    try:
+        import edge_tts
+
+        async def _list() -> list[dict]:
+            return await edge_tts.list_voices()
+
+        raw = asyncio.run(_list())
+    except Exception:
+        return list(NEURAL_VOICE_FALLBACK)
+
+    voices: list[tuple[str, str]] = []
+    for item in raw:
+        short = item.get("ShortName") or ""
+        locale = item.get("Locale") or ""
+        if not short.startswith("en-US-") or locale != "en-US":
+            continue
+        nice = short.removeprefix("en-US-").replace("Neural", "").replace("Multilingual", " Multi")
+        gender = (item.get("Gender") or "").lower()
+        tag = f"{nice} (neural"
+        if gender:
+            tag += f", {gender}"
+        tag += ")"
+        voices.append((tag, short))
+    voices.sort(key=lambda item: item[0].lower())
+    return voices or list(NEURAL_VOICE_FALLBACK)
+
+
+def _build_voice_catalog() -> list[tuple[str, str]]:
+    return _discover_local_voices() + _discover_neural_voices()
 
 
 def _format_multiplier(value: float) -> str:
@@ -73,8 +181,8 @@ def _sapi_volume_from_multiplier(value: float) -> int:
     return max(0, min(100, int(round(value * 100))))
 
 
-def _is_sapi_voice(voice_id: str) -> bool:
-    return voice_id.startswith("sapi:")
+def _is_local_voice(voice_id: str) -> bool:
+    return voice_id.startswith("sapi:") or voice_id.startswith("onecore:")
 
 
 def _no_window_kwargs() -> dict:
@@ -220,14 +328,14 @@ def _which_player(name: str) -> str | None:
     return None
 
 
-def _speak_sapi(
+def _speak_local(
     text: str,
     voice_id: str,
     speed_mult: float,
     volume_mult: float,
 ) -> subprocess.Popen:
-    """Speak via local Windows SAPI (same stack Speakonia uses) — starts immediately."""
-    voice_name = voice_id.split(":", 1)[1]
+    """Speak via local Windows SAPI / OneCore (Speakonia-style) — starts immediately."""
+    kind, payload = voice_id.split(":", 1)
     rate = _sapi_rate_from_multiplier(speed_mult)
     volume = _sapi_volume_from_multiplier(volume_mult)
     # mkstemp leaves the handle open; on Windows that locks the file from PowerShell.
@@ -236,23 +344,39 @@ def _speak_sapi(
     text_file = Path(raw_path)
     text_file.write_text(text, encoding="utf-8")
     text_path = str(text_file).replace("'", "''")
-    voice_lit = voice_name.replace("'", "''")
-    # Match token inside COM description, e.g. "David" / "Zira".
-    voice_token = voice_name.replace("Microsoft ", "").replace(" Desktop", "").replace("'", "''")
-    # Prefer classic SAPI.SpVoice (what Speakonia uses); fall back to System.Speech.
+    payload_lit = payload.replace("'", "''")
+
+    if kind == "onecore":
+        select_block = f"""
+$cat = New-Object -ComObject SAPI.SpObjectTokenCategory
+$cat.SetId('HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Speech_OneCore\\Voices', $false)
+foreach ($t in @($cat.EnumerateTokens())) {{
+  if ($t.Id -eq '{payload_lit}') {{ $voice.Voice = $t; break }}
+}}
+"""
+        fallback_name = ""
+    else:
+        voice_token = (
+            payload.replace("Microsoft ", "").replace(" Desktop", "").replace("'", "''")
+        )
+        select_block = f"""
+foreach ($v in $voice.GetVoices()) {{
+  $desc = $v.GetDescription()
+  if ($desc -like '*{voice_token}*' -or $desc -like '*{payload_lit}*') {{
+    $voice.Voice = $v
+    break
+  }}
+}}
+"""
+        fallback_name = payload_lit
+
     ps = f"""
 $ErrorActionPreference = 'Stop'
 $text = [System.IO.File]::ReadAllText('{text_path}')
 $ok = $false
 try {{
   $voice = New-Object -ComObject SAPI.SpVoice
-  foreach ($v in $voice.GetVoices()) {{
-    $desc = $v.GetDescription()
-    if ($desc -like '*{voice_token}*' -or $desc -like '*{voice_lit}*') {{
-      $voice.Voice = $v
-      break
-    }}
-  }}
+  {select_block}
   $voice.Rate = {rate}
   $voice.Volume = {volume}
   $voice.Speak($text) | Out-Null
@@ -261,7 +385,9 @@ try {{
 if (-not $ok) {{
   Add-Type -AssemblyName System.Speech
   $synth = New-Object System.Speech.Synthesis.SpeechSynthesizer
-  try {{ $synth.SelectVoice('{voice_lit}') }} catch {{ }}
+  try {{
+    if ('{fallback_name}') {{ $synth.SelectVoice('{fallback_name}') }}
+  }} catch {{ }}
   $synth.Rate = {rate}
   $synth.Volume = {volume}
   $synth.Speak($text)
@@ -359,6 +485,7 @@ class ReadAloudApp:
         self._player_proc: subprocess.Popen | None = None
         self._last_clipboard = ""
         self._poll_ms = 350
+        self.voices = _build_voice_catalog()
 
         self._build_ui()
         self._load_settings()
@@ -428,17 +555,25 @@ class ReadAloudApp:
         self.voice_var = tk.StringVar(value=DEFAULT_VOICE_ID)
         self.voice_display = ttk.Combobox(
             props,
-            values=[v[0] for v in VOICES],
+            values=[v[0] for v in self.voices],
             state="readonly",
-            width=28,
+            width=32,
         )
         self.voice_display.pack(fill=tk.X, pady=(2, 10))
-        self.voice_display.set("David — local/fast")
+        default_label = next(
+            (label for label, vid in self.voices if vid == DEFAULT_VOICE_ID),
+            self.voices[0][0] if self.voices else "David — local/fast",
+        )
+        self.voice_display.set(default_label)
+        if self.voices:
+            self.voice_var.set(
+                next((vid for label, vid in self.voices if label == default_label), self.voices[0][1])
+            )
 
         def on_voice_pick(_event=None) -> None:
             idx = self.voice_display.current()
             if idx >= 0:
-                self.voice_var.set(VOICES[idx][1])
+                self.voice_var.set(self.voices[idx][1])
                 self._save_settings()
 
         self.voice_display.bind("<<ComboboxSelected>>", on_voice_pick)
@@ -552,15 +687,15 @@ class ReadAloudApp:
         pitch = _pitch_from_multiplier(MULTIPLIERS[int(self.pitch_var.get())])
         volume = _percent_from_multiplier(volume_mult)
 
-        if _is_sapi_voice(voice):
+        if _is_local_voice(voice):
             self.status.config(text="Speaking…")
         else:
             self.status.config(text="Starting neural voice…")
 
         def worker() -> None:
             try:
-                if _is_sapi_voice(voice):
-                    proc = _speak_sapi(text, voice, speed_mult, volume_mult)
+                if _is_local_voice(voice):
+                    proc = _speak_local(text, voice, speed_mult, volume_mult)
                     self._player_proc = proc
                     proc.wait()
                 else:
@@ -597,17 +732,19 @@ class ReadAloudApp:
             self._on_slider_move()
             return
         voice = data.get("voice", DEFAULT_VOICE_ID)
-        # Migrate older default to local/fast unless user picked something else later.
-        if voice == "en-US-AndrewNeural" and "voice" in data:
-            pass  # keep user's saved Andrew if they saved settings before
         self.voice_var.set(voice)
-        for label, vid in VOICES:
+        for label, vid in self.voices:
             if vid == voice:
                 self.voice_display.set(label)
                 break
         else:
-            self.voice_var.set(DEFAULT_VOICE_ID)
-            self.voice_display.set("David — local/fast")
+            # Saved voice missing — keep a sensible local default.
+            fallback = next(
+                ((label, vid) for label, vid in self.voices if vid == DEFAULT_VOICE_ID),
+                self.voices[0] if self.voices else ("David — local/fast", DEFAULT_VOICE_ID),
+            )
+            self.voice_display.set(fallback[0])
+            self.voice_var.set(fallback[1])
         for key, var in (
             ("pitch_index", self.pitch_var),
             ("speed_index", self.speed_var),
